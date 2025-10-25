@@ -743,15 +743,388 @@ class NoxExtension {
   }
 
   /**
-   * 📄 Get settings panel HTML content
+   * 📄 Get settings panel HTML content (Scalable from settingsTabs.js)
    */
   getSettingsPanelContent(cssVariables = {}) {
     const nonce = this.getNonce();
+    const settingsTabs = require("./src/config/settingsTabs.js");
 
     // Generate CSS variable declarations from theme
     const cssVariableDeclarations = Object.entries(cssVariables)
       .map(([key, value]) => `${key}: ${value} !important;`)
       .join("\n                ");
+
+    // Generate navigation buttons from settingsTabs.js
+    const navButtons = settingsTabs
+      .map(
+        (tab, index) =>
+          `<li><button class="nav-btn${
+            index === 0 ? " active" : ""
+          }" data-section="${tab.id}">${tab.label}</button></li>`
+      )
+      .join("\n                    ");
+
+    // Helper function to generate section HTML based on tab ID
+    const getSectionHTML = (tabId) => {
+      switch (tabId) {
+        case "account":
+          return `<div id="account" class="section">
+                    <h2>👤 Account & Preferences</h2>
+                    <div class="provider-grid">
+                        <div class="provider-card">
+                            <h3>👤 User Profile</h3>
+                            <p>Manage your Nox user preferences and profile</p>
+                            <input type="text" class="api-key-input" placeholder="Display Name" value="Developer">
+                            <button class="btn">Save Profile</button>
+                        </div>
+                        <div class="provider-card">
+                            <h3>🔔 Notifications</h3>
+                            <p>Configure notification preferences</p>
+                            <label><input type="checkbox" checked> Enable completion notifications</label><br>
+                            <label><input type="checkbox" checked> Enable error notifications</label><br>
+                            <label><input type="checkbox"> Enable usage analytics</label>
+                        </div>
+                        <div class="provider-card">
+                            <h3>💾 Data & Privacy</h3>
+                            <p>Manage your data and privacy settings</p>
+                            <button class="btn">Export Chat History</button>
+                            <button class="btn">Privacy Settings</button>
+                        </div>
+                        <div class="provider-card">
+                            <h3>🔄 Reset Nox Extension</h3>
+                            <p>This will clear all data including chat history, API keys, settings, and cached data.</p>
+                            <p><strong>This action cannot be undone!</strong></p>
+                            <div style="margin-top: 20px;">
+                                <h4>What will be reset:</h4>
+                                <ul>
+                                    <li>• All chat conversations and history</li>
+                                    <li>• Stored API keys (securely deleted)</li>
+                                    <li>• Extension settings and preferences</li>
+                                    <li>• Cached data and performance metrics</li>
+                                    <li>• User profile and account data</li>
+                                </ul>
+                            </div>
+                            <button class="btn" style="background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);" onclick="resetExtension()">
+                                🔄 Reset Everything
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+
+        case "about":
+          return `<div id="about" class="section">
+                    <h2>ℹ️ About Nox</h2>
+                    <div class="provider-grid">
+                        <div class="provider-card">
+                            <h3>🦊 Nox v0.1.0</h3>
+                            <p>Your clever AI coding fox</p>
+                            <p>Built with ❤️ for enterprise-scale development</p>
+                            <button class="btn" onclick="openExternal('https://github.com/hadep275/Agent-Nox')">GitHub Repository</button>
+                        </div>
+                        <div class="provider-card">
+                            <h3>🏢 Enterprise Features</h3>
+                            <p>Designed for large-scale codebases (100K+ files)</p>
+                            <ul>
+                                <li>• Multi-AI provider support</li>
+                                <li>• Performance monitoring</li>
+                                <li>• Audit trails & logging</li>
+                                <li>• ROI tracking</li>
+                            </ul>
+                        </div>
+                        <div class="provider-card">
+                            <h3>🎨 Aurora Theme</h3>
+                            <p>Beautiful Northern Lights inspired interface</p>
+                            <p>Crafted for long coding sessions with eye-friendly gradients</p>
+                        </div>
+                    </div>
+                </div>`;
+
+        case "api-keys":
+          return `<div id="api-keys" class="section active">
+                    <h2>🔑 API Keys</h2>
+                    <p>Configure your AI provider API keys securely.</p>
+                    <div class="provider-grid" id="apiKeysGrid">
+                        <!-- API key cards will be populated here -->
+                    </div>
+                </div>`;
+
+        case "voice":
+          return `<div id="voice" class="section">
+                    <h2>🎤 Voice Input</h2>
+                    <p>Configure voice-to-text settings for hands-free coding.</p>
+
+                    <div class="provider-card">
+                        <h3>🎤 Voice Input Settings</h3>
+                        <div style="margin: 16px 0;">
+                            <label style="display: flex; align-items: center; margin-bottom: 12px;">
+                                <input type="checkbox" id="voiceEnabled" style="margin-right: 8px;">
+                                <span>Enable voice input</span>
+                            </label>
+                        </div>
+
+                        <div style="margin: 16px 0;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: bold;">Voice Engine:</label>
+                            <select id="voiceEngine" style="width: 100%; padding: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px;">
+                                <option value="openai">🤖 OpenAI Whisper (Recommended)</option>
+                                <option value="google">🌐 Google Speech</option>
+                                <option value="azure">☁️ Azure Speech</option>
+                                <option value="free" disabled>🆓 Vosk (Advanced Setup Required)</option>
+                            </select>
+                            <!-- Dynamic note that shows based on selected engine -->
+                            <div id="voiceEngineNote" style="margin-top: 8px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 12px; color: #888; display: none;">
+                                <!-- Content will be dynamically updated -->
+                            </div>
+                        </div>
+
+                        <!-- 🌍 Language Selection Section -->
+                        <div style="margin: 16px 0;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: bold;">Language:</label>
+                            <select id="voiceLanguage" style="width: 100%; padding: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px;">
+                                <option value="en-US">🇺🇸 English (US)</option>
+                                <option value="en-GB">🇬🇧 English (UK)</option>
+                                <option value="es-ES">🇪🇸 Spanish (Spain)</option>
+                                <option value="es-MX">🇲🇽 Spanish (Mexico)</option>
+                                <option value="fr-FR">🇫🇷 French (France)</option>
+                                <option value="de-DE">🇩🇪 German (Germany)</option>
+                                <option value="it-IT">🇮🇹 Italian (Italy)</option>
+                                <option value="pt-PT">🇵🇹 Portuguese (Portugal)</option>
+                                <option value="pt-BR">🇧🇷 Portuguese (Brazil)</option>
+                                <option value="ja-JP">🇯🇵 Japanese (Japan)</option>
+                                <option value="ko-KR">🇰🇷 Korean (Korea)</option>
+                                <option value="zh-CN">🇨🇳 Chinese (Simplified)</option>
+                                <option value="zh-TW">🇹🇼 Chinese (Traditional)</option>
+                                <option value="hi-IN">🇮🇳 Hindi (India)</option>
+                                <option value="ar-SA">🇸🇦 Arabic (Saudi Arabia)</option>
+                                <option value="ru-RU">🇷🇺 Russian (Russia)</option>
+                                <option value="nl-NL">🇳🇱 Dutch (Netherlands)</option>
+                                <option value="sv-SE">🇸🇪 Swedish (Sweden)</option>
+                                <option value="no-NO">🇳🇴 Norwegian (Norway)</option>
+                                <option value="da-DK">🇩🇰 Danish (Denmark)</option>
+                                <option value="pl-PL">🇵🇱 Polish (Poland)</option>
+                            </select>
+                            <!-- Dynamic language note -->
+                            <div id="voiceLanguageNote" style="margin-top: 8px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 12px; color: #888; display: none;">
+                                <!-- Content will be dynamically updated based on engine + language -->
+                            </div>
+                        </div>
+
+                        <div id="googleApiKeySection" style="margin: 16px 0; display: none;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: bold;">Google Cloud API Key:</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="password" id="googleApiKey" placeholder="Enter Google Cloud API key..."
+                                       style="flex: 1; padding: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px;">
+                                <button id="saveGoogleApiKey" class="btn">Save</button>
+                            </div>
+                        </div>
+
+                        <div id="azureApiKeySection" style="margin: 16px 0; display: none;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: bold;">Azure Speech API Key:</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="password" id="azureApiKey" placeholder="Enter Azure Speech API key..."
+                                       style="flex: 1; padding: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px;">
+                                <button id="saveAzureApiKey" class="btn">Save</button>
+                            </div>
+                            <div style="margin-top: 8px;">
+                                <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #888;">Azure Region (e.g., eastus, westus2):</label>
+                                <input type="text" id="azureRegion" placeholder="eastus"
+                                       style="width: 100%; padding: 6px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px; font-size: 12px;">
+                            </div>
+                        </div>
+
+                        <div style="margin: 16px 0;">
+                            <h4>Engine Status:</h4>
+                            <div id="voiceEngineStatus" style="margin-top: 8px;">
+                                <div style="display: flex; align-items: center; margin: 4px 0;">
+                                    <span id="openaiStatus" style="margin-right: 8px;">🤖 OpenAI Whisper:</span>
+                                    <span id="openaiStatusText" style="color: #f44336;">❌ No OpenAI API key</span>
+                                    <span style="margin-left: 8px; font-size: 11px; color: #666;">(Set in API Keys section)</span>
+                                </div>
+                                <div style="display: flex; align-items: center; margin: 4px 0;">
+                                    <span id="googleStatus" style="margin-right: 8px;">🌐 Google Speech:</span>
+                                    <span id="googleStatusText" style="color: #f44336;">❌ No Google API key</span>
+                                </div>
+                                <div style="display: flex; align-items: center; margin: 4px 0;">
+                                    <span id="azureStatus" style="margin-right: 8px;">☁️ Azure Speech:</span>
+                                    <span id="azureStatusText" style="color: #f44336;">❌ No Azure API key</span>
+                                </div>
+                                <div style="display: flex; align-items: center; margin: 4px 0;">
+                                    <span id="freeStatus" style="margin-right: 8px;">🆓 Vosk (Offline):</span>
+                                    <span style="color: #ff9800;">⚠️ Advanced setup required</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+        case "theme":
+          return `<div id="theme" class="section">
+                    <h2>🎨 Aurora Themes</h2>
+                    <p>Choose your perfect Aurora theme for an immersive coding experience.</p>
+
+                    <div class="current-theme-display" style="margin-bottom: 20px; padding: 16px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                        <h3 style="margin: 0 0 8px 0; color: #64b5f6;">Current Theme: <span id="currentThemeName">🌌 Classic Aurora</span></h3>
+                        <div class="theme-preview-bar" id="currentThemePreview" style="height: 4px; border-radius: 2px; background: linear-gradient(135deg, #4c9aff, #8b5cf6, #10b981);"></div>
+                    </div>
+
+                    <div class="provider-grid">
+                        <!-- Dark Themes -->
+                        <div class="provider-card theme-card" data-theme="classic">
+                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #4c9aff, #8b5cf6, #10b981);"></div>
+                            <h3>🌌 Classic Aurora</h3>
+                            <p>Default blue-purple aurora theme</p>
+                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
+                            <button class="btn theme-btn" data-theme="classic">Apply Theme</button>
+                        </div>
+
+                        <div class="provider-card theme-card" data-theme="fire">
+                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #ff6b35, #ef4444, #f59e0b);"></div>
+                            <h3>🔥 Fire Aurora</h3>
+                            <p>Warm orange-red aurora theme</p>
+                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
+                            <button class="btn theme-btn" data-theme="fire">Apply Theme</button>
+                        </div>
+
+                        <div class="provider-card theme-card" data-theme="forest">
+                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #10b981, #06b6d4, #059669);"></div>
+                            <h3>🌿 Forest Aurora</h3>
+                            <p>Green-teal aurora theme</p>
+                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
+                            <button class="btn theme-btn" data-theme="forest">Apply Theme</button>
+                        </div>
+
+                        <div class="provider-card theme-card" data-theme="sakura">
+                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #f472b6, #a855f7, #fb7185);"></div>
+                            <h3>🌸 Sakura Aurora</h3>
+                            <p>Pink-purple cherry blossom theme</p>
+                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
+                            <button class="btn theme-btn" data-theme="sakura">Apply Theme</button>
+                        </div>
+
+                        <div class="provider-card theme-card" data-theme="midnight">
+                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #6366f1, #8b5cf6, #3b82f6);"></div>
+                            <h3>🌙 Midnight Aurora</h3>
+                            <p>Deep focus, minimal distraction</p>
+                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
+                            <button class="btn theme-btn" data-theme="midnight">Apply Theme</button>
+                        </div>
+
+                        <!-- Light Theme -->
+                        <div class="provider-card theme-card" data-theme="solar">
+                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #f59e0b, #d97706, #ea580c);"></div>
+                            <h3>☀️ Solar Aurora</h3>
+                            <p>Bright, energetic daytime coding</p>
+                            <span class="theme-category" style="font-size: 12px; color: #f59e0b;">☀️ Light Mode</span>
+                            <button class="btn theme-btn" data-theme="solar">Apply Theme</button>
+                        </div>
+                    </div>
+
+                    <div class="theme-options" style="margin-top: 20px; padding: 16px; background: rgba(255, 255, 255, 0.02); border-radius: 8px;">
+                        <button class="btn reset-theme-btn" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;">
+                            🔄 Reset to Default Theme
+                        </button>
+                    </div>
+                </div>`;
+
+        case "performance":
+          return `<div id="performance" class="section">
+                    <h2>📊 Performance Dashboard</h2>
+                    <p>Monitor your Nox usage and performance metrics.</p>
+                    <div class="provider-card">
+                        <h3>📈 Usage Statistics</h3>
+                        <p>View detailed analytics about your Nox usage, including cost breakdown by provider, token efficiency, and daily trends.</p>
+                        <button id="openDashboardBtn" style="margin-top: 16px; padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
+                            🚀 Open Dashboard
+                        </button>
+                    </div>
+                </div>`;
+
+        case "preferences":
+          return `<div id="preferences" class="section">
+                    <h2>⚙️ Preferences</h2>
+                    <p>Customize Nox behavior and debugging options.</p>
+
+                    <div class="provider-grid">
+                        <div class="provider-card">
+                            <h3>🐛 Debug Mode</h3>
+                            <p>Enable detailed logging for troubleshooting. Shows per-chunk streaming logs and diagnostic information.</p>
+                            <div style="margin: 16px 0;">
+                                <label class="debug-toggle-switch">
+                                    <input type="checkbox" id="debugModeToggle" class="debug-mode-checkbox">
+                                    <div class="toggle-switch"></div>
+                                    <span style="cursor: pointer; user-select: none;">Enable Debug Mode</span>
+                                </label>
+                                <small style="color: #a0a9c0; display: block; margin-top: 12px;">
+                                    When enabled, you'll see detailed logs in the VS Code output channel. Useful for troubleshooting issues.
+                                </small>
+                            </div>
+                        </div>
+
+                        <div class="provider-card">
+                            <h3>📝 Log Level</h3>
+                            <p>Set the minimum log level to display in the output channel.</p>
+                            <div style="margin: 16px 0;">
+                                <select id="logLevelSelect">
+                                    <option value="debug">🐛 Debug - Show all logs</option>
+                                    <option value="info" selected>ℹ️ Info - Show info and above</option>
+                                    <option value="warn">⚠️ Warn - Show warnings and above</option>
+                                    <option value="error">❌ Error - Show errors only</option>
+                                </select>
+                                <small style="color: #a0a9c0; display: block; margin-top: 8px;">
+                                    Higher levels reduce console spam. Debug mode overrides this setting.
+                                </small>
+                            </div>
+                        </div>
+
+                        <div class="provider-card">
+                            <h3>💾 Preferences Info</h3>
+                            <p>Preferences are stored locally in VS Code settings.</p>
+                            <div style="margin: 16px 0; padding: 12px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; border-left: 3px solid #64b5f6;">
+                                <small style="color: #a0a9c0;">
+                                    <strong>Debug Mode:</strong> nox.debugMode<br>
+                                    <strong>Log Level:</strong> nox.logLevel<br><br>
+                                    These settings sync across all your VS Code workspaces.
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+        case "help":
+          return `<div id="help" class="section">
+                    <h2>📖 Help & Documentation</h2>
+                    <div class="provider-grid">
+                        <div class="provider-card">
+                            <h3>📚 User Guide</h3>
+                            <p>Complete guide to using Nox effectively</p>
+                            <button class="btn">Open User Guide</button>
+                        </div>
+                        <div class="provider-card">
+                            <h3>⌨️ Keyboard Shortcuts</h3>
+                            <p>List of all Nox commands and shortcuts</p>
+                            <button class="btn" onclick="openKeybindings()">View Shortcuts</button>
+                        </div>
+                        <div class="provider-card">
+                            <h3>🌐 Online Documentation</h3>
+                            <p>Visit our comprehensive documentation website</p>
+                            <button class="btn" onclick="openExternal('https://hadep275.github.io/Agent-Nox/')">Open Docs</button>
+                        </div>
+                        <div class="provider-card">
+                            <h3>🐛 Report Issue</h3>
+                            <p>Found a bug or have a feature request?</p>
+                            <button class="btn" onclick="openExternal('https://github.com/hadep275/Agent-Nox/issues')">Report Issue</button>
+                        </div>
+                    </div>
+                </div>`;
+
+        default:
+          return "";
+      }
+    };
+
+    // Generate all sections from settingsTabs.js
+    const sectionsHTML = settingsTabs
+      .map((tab) => getSectionHTML(tab.id))
+      .join("\n            ");
 
     return `<!DOCTYPE html>
     <html lang="en">
@@ -1082,366 +1455,17 @@ class NoxExtension {
             <div class="settings-sidebar">
                 <h2>🦊 Nox Settings</h2>
                 <ul class="settings-nav">
-                    <li><button class="nav-btn active" data-section="api-keys">🔑 API Keys</button></li>
-                    <li><button class="nav-btn" data-section="voice">🎤 Voice Input</button></li>
-                    <li><button class="nav-btn" data-section="theme">🎨 Theme</button></li>
-                    <li><button class="nav-btn" data-section="preferences">⚙️ Preferences</button></li>
-                    <li><button class="nav-btn" data-section="performance">📊 Performance</button></li>
-                    <li><button class="nav-btn" data-section="help">📖 Help & Documentation</button></li>
-                    <li><button class="nav-btn" data-section="account">👤 Account</button></li>
-                    <li><button class="nav-btn" data-section="reset">🔄 Reset Extension</button></li>
-                    <li><button class="nav-btn" data-section="about">ℹ️ About</button></li>
+                    ${navButtons}
                 </ul>
             </div>
 
             <div class="settings-content">
-                <div id="api-keys" class="section active">
-                    <h2>🔑 API Keys</h2>
-                    <p>Configure your AI provider API keys securely.</p>
-                    <div class="provider-grid" id="apiKeysGrid">
-                        <!-- API key cards will be populated here -->
-                    </div>
-                </div>
-
-                <div id="voice" class="section">
-                    <h2>🎤 Voice Input</h2>
-                    <p>Configure voice-to-text settings for hands-free coding.</p>
-
-                    <div class="provider-card">
-                        <h3>🎤 Voice Input Settings</h3>
-                        <div style="margin: 16px 0;">
-                            <label style="display: flex; align-items: center; margin-bottom: 12px;">
-                                <input type="checkbox" id="voiceEnabled" style="margin-right: 8px;">
-                                <span>Enable voice input</span>
-                            </label>
-                        </div>
-
-                        <div style="margin: 16px 0;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: bold;">Voice Engine:</label>
-                            <select id="voiceEngine" style="width: 100%; padding: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px;">
-                                <option value="openai">🤖 OpenAI Whisper (Recommended)</option>
-                                <option value="google">🌐 Google Speech</option>
-                                <option value="azure">☁️ Azure Speech</option>
-                                <option value="free" disabled>🆓 Vosk (Advanced Setup Required)</option>
-                            </select>
-                            <!-- Dynamic note that shows based on selected engine -->
-                            <div id="voiceEngineNote" style="margin-top: 8px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 12px; color: #888; display: none;">
-                                <!-- Content will be dynamically updated -->
-                            </div>
-                        </div>
-
-                        <!-- 🌍 Language Selection Section -->
-                        <div style="margin: 16px 0;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: bold;">Language:</label>
-                            <select id="voiceLanguage" style="width: 100%; padding: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px;">
-                                <option value="en-US">🇺🇸 English (US)</option>
-                                <option value="en-GB">🇬🇧 English (UK)</option>
-                                <option value="es-ES">🇪🇸 Spanish (Spain)</option>
-                                <option value="es-MX">🇲🇽 Spanish (Mexico)</option>
-                                <option value="fr-FR">🇫🇷 French (France)</option>
-                                <option value="de-DE">🇩🇪 German (Germany)</option>
-                                <option value="it-IT">🇮🇹 Italian (Italy)</option>
-                                <option value="pt-PT">🇵🇹 Portuguese (Portugal)</option>
-                                <option value="pt-BR">🇧🇷 Portuguese (Brazil)</option>
-                                <option value="ja-JP">🇯🇵 Japanese (Japan)</option>
-                                <option value="ko-KR">🇰🇷 Korean (Korea)</option>
-                                <option value="zh-CN">🇨🇳 Chinese (Simplified)</option>
-                                <option value="zh-TW">🇹🇼 Chinese (Traditional)</option>
-                                <option value="hi-IN">🇮🇳 Hindi (India)</option>
-                                <option value="ar-SA">🇸🇦 Arabic (Saudi Arabia)</option>
-                                <option value="ru-RU">🇷🇺 Russian (Russia)</option>
-                                <option value="nl-NL">🇳🇱 Dutch (Netherlands)</option>
-                                <option value="sv-SE">🇸🇪 Swedish (Sweden)</option>
-                                <option value="no-NO">🇳🇴 Norwegian (Norway)</option>
-                                <option value="da-DK">🇩🇰 Danish (Denmark)</option>
-                                <option value="pl-PL">🇵🇱 Polish (Poland)</option>
-                            </select>
-                            <!-- Dynamic language note -->
-                            <div id="voiceLanguageNote" style="margin-top: 8px; padding: 8px; background: #1a1a1a; border-radius: 4px; font-size: 12px; color: #888; display: none;">
-                                <!-- Content will be dynamically updated based on engine + language -->
-                            </div>
-                        </div>
-
-                        <div id="googleApiKeySection" style="margin: 16px 0; display: none;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: bold;">Google Cloud API Key:</label>
-                            <div style="display: flex; gap: 8px;">
-                                <input type="password" id="googleApiKey" placeholder="Enter Google Cloud API key..."
-                                       style="flex: 1; padding: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px;">
-                                <button id="saveGoogleApiKey" class="btn">Save</button>
-                            </div>
-                        </div>
-
-                        <div id="azureApiKeySection" style="margin: 16px 0; display: none;">
-                            <label style="display: block; margin-bottom: 8px; font-weight: bold;">Azure Speech API Key:</label>
-                            <div style="display: flex; gap: 8px;">
-                                <input type="password" id="azureApiKey" placeholder="Enter Azure Speech API key..."
-                                       style="flex: 1; padding: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px;">
-                                <button id="saveAzureApiKey" class="btn">Save</button>
-                            </div>
-                            <div style="margin-top: 8px;">
-                                <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #888;">Azure Region (e.g., eastus, westus2):</label>
-                                <input type="text" id="azureRegion" placeholder="eastus"
-                                       style="width: 100%; padding: 6px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 4px; font-size: 12px;">
-                            </div>
-                        </div>
-
-                        <div style="margin: 16px 0;">
-                            <h4>Engine Status:</h4>
-                            <div id="voiceEngineStatus" style="margin-top: 8px;">
-                                <div style="display: flex; align-items: center; margin: 4px 0;">
-                                    <span id="openaiStatus" style="margin-right: 8px;">🤖 OpenAI Whisper:</span>
-                                    <span id="openaiStatusText" style="color: #f44336;">❌ No OpenAI API key</span>
-                                    <span style="margin-left: 8px; font-size: 11px; color: #666;">(Set in API Keys section)</span>
-                                </div>
-                                <div style="display: flex; align-items: center; margin: 4px 0;">
-                                    <span id="googleStatus" style="margin-right: 8px;">🌐 Google Speech:</span>
-                                    <span id="googleStatusText" style="color: #f44336;">❌ No Google API key</span>
-                                </div>
-                                <div style="display: flex; align-items: center; margin: 4px 0;">
-                                    <span id="azureStatus" style="margin-right: 8px;">☁️ Azure Speech:</span>
-                                    <span id="azureStatusText" style="color: #f44336;">❌ No Azure API key</span>
-                                </div>
-                                <div style="display: flex; align-items: center; margin: 4px 0;">
-                                    <span id="freeStatus" style="margin-right: 8px;">🆓 Vosk (Offline):</span>
-                                    <span style="color: #ff9800;">⚠️ Advanced setup required</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="theme" class="section">
-                    <h2>🎨 Aurora Themes</h2>
-                    <p>Choose your perfect Aurora theme for an immersive coding experience.</p>
-
-                    <div class="current-theme-display" style="margin-bottom: 20px; padding: 16px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
-                        <h3 style="margin: 0 0 8px 0; color: #64b5f6;">Current Theme: <span id="currentThemeName">🌌 Classic Aurora</span></h3>
-                        <div class="theme-preview-bar" id="currentThemePreview" style="height: 4px; border-radius: 2px; background: linear-gradient(135deg, #4c9aff, #8b5cf6, #10b981);"></div>
-                    </div>
-
-                    <div class="provider-grid">
-                        <!-- Dark Themes -->
-                        <div class="provider-card theme-card" data-theme="classic">
-                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #4c9aff, #8b5cf6, #10b981);"></div>
-                            <h3>🌌 Classic Aurora</h3>
-                            <p>Default blue-purple aurora theme</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="classic">Apply Theme</button>
-                        </div>
-
-                        <div class="provider-card theme-card" data-theme="fire">
-                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #ff6b35, #ef4444, #f59e0b);"></div>
-                            <h3>🔥 Fire Aurora</h3>
-                            <p>Warm orange-red aurora theme</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="fire">Apply Theme</button>
-                        </div>
-
-                        <div class="provider-card theme-card" data-theme="forest">
-                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #10b981, #06b6d4, #059669);"></div>
-                            <h3>🌿 Forest Aurora</h3>
-                            <p>Green-teal aurora theme</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="forest">Apply Theme</button>
-                        </div>
-
-                        <div class="provider-card theme-card" data-theme="sakura">
-                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #f472b6, #a855f7, #fb7185);"></div>
-                            <h3>🌸 Sakura Aurora</h3>
-                            <p>Pink-purple cherry blossom theme</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="sakura">Apply Theme</button>
-                        </div>
-
-                        <div class="provider-card theme-card" data-theme="midnight">
-                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #6366f1, #8b5cf6, #3b82f6);"></div>
-                            <h3>🌙 Midnight Aurora</h3>
-                            <p>Deep focus, minimal distraction</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="midnight">Apply Theme</button>
-                        </div>
-
-                        <!-- Light Theme -->
-                        <div class="provider-card theme-card" data-theme="solar">
-                            <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #f59e0b, #d97706, #ea580c);"></div>
-                            <h3>☀️ Solar Aurora</h3>
-                            <p>Bright, energetic daytime coding</p>
-                            <span class="theme-category" style="font-size: 12px; color: #f59e0b;">☀️ Light Mode</span>
-                            <button class="btn theme-btn" data-theme="solar">Apply Theme</button>
-                        </div>
-                    </div>
-
-                    <div class="theme-options" style="margin-top: 20px; padding: 16px; background: rgba(255, 255, 255, 0.02); border-radius: 8px;">
-                        <button class="btn reset-theme-btn" style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;">
-                            🔄 Reset to Default Theme
-                        </button>
-                    </div>
-                </div>
-
-                <div id="performance" class="section">
-                    <h2>📊 Performance Dashboard</h2>
-                    <p>Monitor your Nox usage and performance metrics.</p>
-                    <div class="provider-card">
-                        <h3>📈 Usage Statistics</h3>
-                        <p>View detailed analytics about your Nox usage, including cost breakdown by provider, token efficiency, and daily trends.</p>
-                        <button id="openDashboardBtn" style="margin-top: 16px; padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">
-                            🚀 Open Dashboard
-                        </button>
-                    </div>
-                </div>
-
-                <div id="preferences" class="section">
-                    <h2>⚙️ Preferences</h2>
-                    <p>Customize Nox behavior and debugging options.</p>
-
-                    <div class="provider-grid">
-                        <div class="provider-card">
-                            <h3>🐛 Debug Mode</h3>
-                            <p>Enable detailed logging for troubleshooting. Shows per-chunk streaming logs and diagnostic information.</p>
-                            <div style="margin: 16px 0;">
-                                <label class="debug-toggle-switch">
-                                    <input type="checkbox" id="debugModeToggle" class="debug-mode-checkbox">
-                                    <div class="toggle-switch"></div>
-                                    <span style="cursor: pointer; user-select: none;">Enable Debug Mode</span>
-                                </label>
-                                <small style="color: #a0a9c0; display: block; margin-top: 12px;">
-                                    When enabled, you'll see detailed logs in the VS Code output channel. Useful for troubleshooting issues.
-                                </small>
-                            </div>
-                        </div>
-
-                        <div class="provider-card">
-                            <h3>📝 Log Level</h3>
-                            <p>Set the minimum log level to display in the output channel.</p>
-                            <div style="margin: 16px 0;">
-                                <select id="logLevelSelect">
-                                    <option value="debug">🐛 Debug - Show all logs</option>
-                                    <option value="info" selected>ℹ️ Info - Show info and above</option>
-                                    <option value="warn">⚠️ Warn - Show warnings and above</option>
-                                    <option value="error">❌ Error - Show errors only</option>
-                                </select>
-                                <small style="color: #a0a9c0; display: block; margin-top: 8px;">
-                                    Higher levels reduce console spam. Debug mode overrides this setting.
-                                </small>
-                            </div>
-                        </div>
-
-                        <div class="provider-card">
-                            <h3>💾 Preferences Info</h3>
-                            <p>Preferences are stored locally in VS Code settings.</p>
-                            <div style="margin: 16px 0; padding: 12px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; border-left: 3px solid #64b5f6;">
-                                <small style="color: #a0a9c0;">
-                                    <strong>Debug Mode:</strong> nox.debugMode<br>
-                                    <strong>Log Level:</strong> nox.logLevel<br><br>
-                                    These settings sync across all your VS Code workspaces.
-                                </small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="help" class="section">
-                    <h2>📖 Help & Documentation</h2>
-                    <div class="provider-grid">
-                        <div class="provider-card">
-                            <h3>📚 User Guide</h3>
-                            <p>Complete guide to using Nox effectively</p>
-                            <button class="btn">Open User Guide</button>
-                        </div>
-                        <div class="provider-card">
-                            <h3>⌨️ Keyboard Shortcuts</h3>
-                            <p>List of all Nox commands and shortcuts</p>
-                            <button class="btn" onclick="openKeybindings()">View Shortcuts</button>
-                        </div>
-                        <div class="provider-card">
-                            <h3>🌐 Online Documentation</h3>
-                            <p>Visit our comprehensive documentation website</p>
-                            <button class="btn" onclick="openExternal('https://hadep275.github.io/Agent-Nox/')">Open Docs</button>
-                        </div>
-                        <div class="provider-card">
-                            <h3>🐛 Report Issue</h3>
-                            <p>Found a bug or have a feature request?</p>
-                            <button class="btn" onclick="openExternal('https://github.com/hadep275/Agent-Nox/issues')">Report Issue</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="account" class="section">
-                    <h2>👤 Account & Preferences</h2>
-                    <div class="provider-grid">
-                        <div class="provider-card">
-                            <h3>👤 User Profile</h3>
-                            <p>Manage your Nox user preferences and profile</p>
-                            <input type="text" class="api-key-input" placeholder="Display Name" value="Developer">
-                            <button class="btn">Save Profile</button>
-                        </div>
-                        <div class="provider-card">
-                            <h3>🔔 Notifications</h3>
-                            <p>Configure notification preferences</p>
-                            <label><input type="checkbox" checked> Enable completion notifications</label><br>
-                            <label><input type="checkbox" checked> Enable error notifications</label><br>
-                            <label><input type="checkbox"> Enable usage analytics</label>
-                        </div>
-                        <div class="provider-card">
-                            <h3>💾 Data & Privacy</h3>
-                            <p>Manage your data and privacy settings</p>
-                            <button class="btn">Export Chat History</button>
-                            <button class="btn">Privacy Settings</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="reset" class="section">
-                    <h2>🔄 Reset Extension</h2>
-                    <div class="provider-card">
-                        <h3>⚠️ Reset Nox Extension</h3>
-                        <p>This will clear all data including chat history, API keys, settings, and cached data.</p>
-                        <p><strong>This action cannot be undone!</strong></p>
-                        <div style="margin-top: 20px;">
-                            <h4>What will be reset:</h4>
-                            <ul>
-                                <li>• All chat conversations and history</li>
-                                <li>• Stored API keys (securely deleted)</li>
-                                <li>• Extension settings and preferences</li>
-                                <li>• Cached data and performance metrics</li>
-                                <li>• User profile and account data</li>
-                            </ul>
-                        </div>
-                        <button class="btn" style="background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);" onclick="resetExtension()">
-                            🔄 Reset Everything
-                        </button>
-                    </div>
-                </div>
-
-                <div id="about" class="section">
-                    <h2>ℹ️ About Nox</h2>
-                    <div class="provider-grid">
-                        <div class="provider-card">
-                            <h3>🦊 Nox v0.1.0</h3>
-                            <p>Your clever AI coding fox</p>
-                            <p>Built with ❤️ for enterprise-scale development</p>
-                            <button class="btn" onclick="openExternal('https://github.com/hadep275/Agent-Nox')">GitHub Repository</button>
-                        </div>
-                        <div class="provider-card">
-                            <h3>🏢 Enterprise Features</h3>
-                            <p>Designed for large-scale codebases (100K+ files)</p>
-                            <ul>
-                                <li>• Multi-AI provider support</li>
-                                <li>• Performance monitoring</li>
-                                <li>• Audit trails & logging</li>
-                                <li>• ROI tracking</li>
-                            </ul>
-                        </div>
-                        <div class="provider-card">
-                            <h3>🎨 Aurora Theme</h3>
-                            <p>Beautiful Northern Lights inspired interface</p>
-                            <p>Crafted for long coding sessions with eye-friendly gradients</p>
-                        </div>
-                    </div>
-                </div>
+                ${sectionsHTML}
             </div>
         </div>
 
+        <!-- PLACEHOLDER FOR REMOVED SECTIONS - All sections now generated from settingsTabs.js -->
+        <!-- Old hardcoded sections removed and replaced with dynamic generation -->
         <script nonce="${nonce}">
             const vscode = acquireVsCodeApi();
 
