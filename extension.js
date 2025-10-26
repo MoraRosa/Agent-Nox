@@ -968,53 +968,41 @@ class NoxExtension {
 
                     <div class="provider-grid">
                         <!-- Dark Themes -->
-                        <div class="provider-card theme-card" data-theme="classic">
+                        <div class="provider-card theme-card" data-theme="classic" title="Default blue-purple aurora theme">
                             <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #4c9aff, #8b5cf6, #10b981);"></div>
                             <h3>🌌 Classic Aurora</h3>
-                            <p>Default blue-purple aurora theme</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="classic">Apply Theme</button>
+                            <span class="theme-category">🌙</span>
                         </div>
 
-                        <div class="provider-card theme-card" data-theme="fire">
+                        <div class="provider-card theme-card" data-theme="fire" title="Warm orange-red aurora theme">
                             <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #ff6b35, #ef4444, #f59e0b);"></div>
                             <h3>🔥 Fire Aurora</h3>
-                            <p>Warm orange-red aurora theme</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="fire">Apply Theme</button>
+                            <span class="theme-category">🌙</span>
                         </div>
 
-                        <div class="provider-card theme-card" data-theme="forest">
+                        <div class="provider-card theme-card" data-theme="forest" title="Green-teal aurora theme">
                             <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #10b981, #06b6d4, #059669);"></div>
                             <h3>🌿 Forest Aurora</h3>
-                            <p>Green-teal aurora theme</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="forest">Apply Theme</button>
+                            <span class="theme-category">🌙</span>
                         </div>
 
-                        <div class="provider-card theme-card" data-theme="sakura">
+                        <div class="provider-card theme-card" data-theme="sakura" title="Pink-purple cherry blossom theme">
                             <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #f472b6, #a855f7, #fb7185);"></div>
                             <h3>🌸 Sakura Aurora</h3>
-                            <p>Pink-purple cherry blossom theme</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="sakura">Apply Theme</button>
+                            <span class="theme-category">🌙</span>
                         </div>
 
-                        <div class="provider-card theme-card" data-theme="midnight">
+                        <div class="provider-card theme-card" data-theme="midnight" title="Deep focus, minimal distraction">
                             <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #6366f1, #8b5cf6, #3b82f6);"></div>
                             <h3>🌙 Midnight Aurora</h3>
-                            <p>Deep focus, minimal distraction</p>
-                            <span class="theme-category" style="font-size: 12px; color: #a0a9c0;">🌙 Dark Mode</span>
-                            <button class="btn theme-btn" data-theme="midnight">Apply Theme</button>
+                            <span class="theme-category">🌙</span>
                         </div>
 
                         <!-- Light Theme -->
-                        <div class="provider-card theme-card" data-theme="solar">
+                        <div class="provider-card theme-card" data-theme="solar" title="Bright, energetic daytime coding">
                             <div class="theme-preview" style="height: 40px; border-radius: 6px; margin-bottom: 12px; background: linear-gradient(135deg, #f59e0b, #d97706, #ea580c);"></div>
                             <h3>☀️ Solar Aurora</h3>
-                            <p>Bright, energetic daytime coding</p>
-                            <span class="theme-category" style="font-size: 12px; color: #f59e0b;">☀️ Light Mode</span>
-                            <button class="btn theme-btn" data-theme="solar">Apply Theme</button>
+                            <span class="theme-category">☀️</span>
                         </div>
                     </div>
 
@@ -1262,6 +1250,99 @@ class NoxExtension {
                 margin-top: 0;
                 color: var(--color-accent);
                 font-size: 18px;
+            }
+
+            /* 🎨 Theme Card Styles */
+            .theme-card {
+                cursor: pointer;
+                border: 4px solid transparent;
+                transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+                position: relative;
+                overflow: hidden;
+            }
+
+            /* Inner shimmer effect for unselected cards on hover */
+            .theme-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: linear-gradient(
+                    135deg,
+                    rgba(76, 154, 255, 0.05) 0%,
+                    rgba(139, 92, 246, 0.05) 25%,
+                    rgba(16, 185, 129, 0.05) 50%,
+                    rgba(244, 114, 182, 0.05) 75%,
+                    rgba(6, 182, 212, 0.05) 100%
+                );
+                background-size: 400% 400%;
+                animation: aurora-shimmer 6s ease-in-out infinite;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+                pointer-events: none;
+                z-index: 0;
+                border-radius: 12px;
+            }
+
+            @keyframes aurora-shimmer {
+                0%, 100% {
+                    background-position: 0% 50%;
+                }
+                50% {
+                    background-position: 100% 50%;
+                }
+            }
+
+            .theme-card:hover::before {
+                opacity: 1;
+            }
+
+            .theme-card:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+                border-color: rgba(76, 154, 255, 0.3);
+            }
+
+            .theme-card.selected {
+                border-color: #10b981;
+                box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+            }
+
+            .theme-card.selected::before {
+                opacity: 1;
+                background: linear-gradient(
+                    135deg,
+                    rgba(16, 185, 129, 0.15) 0%,
+                    rgba(16, 185, 129, 0.08) 50%,
+                    rgba(16, 185, 129, 0.15) 100%
+                );
+                animation: aurora-shimmer-selected 4s ease-in-out infinite;
+            }
+
+            @keyframes aurora-shimmer-selected {
+                0%, 100% {
+                    background-position: 0% 50%;
+                }
+                50% {
+                    background-position: 100% 50%;
+                }
+            }
+
+            .theme-category {
+                display: inline-block;
+                font-size: 16px;
+                margin-top: 8px;
+                opacity: 0.8;
+                transition: all 0.2s ease;
+                position: relative;
+                z-index: 1;
+            }
+
+            .theme-card:hover .theme-category {
+                opacity: 1;
+                transform: scale(1.1);
             }
 
             .input-container {
@@ -2024,12 +2105,12 @@ class NoxExtension {
                 updateThemeButtons('classic');
             }
 
-            // Setup theme button event listeners
+            // Setup theme card event listeners
             function setupThemeEventListeners() {
-                // Theme apply buttons
-                document.querySelectorAll('.theme-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const themeId = e.target.getAttribute('data-theme');
+                // Theme cards - click anywhere on card to select
+                document.querySelectorAll('.theme-card').forEach(card => {
+                    card.addEventListener('click', (e) => {
+                        const themeId = card.getAttribute('data-theme');
                         if (themeId) {
                             applyThemeFromSettings(themeId);
                         }
@@ -2046,24 +2127,13 @@ class NoxExtension {
             }
 
             function updateThemeButtons(activeThemeId) {
-                // Get CSS variables from root
-                const root = document.documentElement;
-                const successGradient = getComputedStyle(root).getPropertyValue('--gradient-success').trim();
-                const primaryGradient = getComputedStyle(root).getPropertyValue('--gradient-primary').trim();
-
-                // Update all theme buttons
-                document.querySelectorAll('.theme-btn').forEach(btn => {
-                    const themeId = btn.getAttribute('data-theme');
+                // Update all theme cards - remove selected class from all, add to active
+                document.querySelectorAll('.theme-card').forEach(card => {
+                    const themeId = card.getAttribute('data-theme');
                     if (themeId === activeThemeId) {
-                        btn.textContent = 'Current Theme';
-                        btn.style.background = successGradient;
-                        btn.style.color = 'white';
-                        btn.disabled = true;
+                        card.classList.add('selected');
                     } else {
-                        btn.textContent = 'Apply Theme';
-                        btn.style.background = primaryGradient;
-                        btn.style.color = 'white';
-                        btn.disabled = false;
+                        card.classList.remove('selected');
                     }
                 });
 
