@@ -837,6 +837,28 @@ class AgentController {
         }
       }
 
+      // 🔥 NEW: Enhanced file operation detection
+      const fileOperations = this.detectFileOperations(
+        parameters.message || "",
+        aiResponse.content || ""
+      );
+
+      this.logger.info(
+        `🔍 DEBUG: Detected ${fileOperations.length} file operations`
+      );
+      for (const fileOp of fileOperations) {
+        this.logger.info(
+          `🔍 DEBUG: Adding file operation: ${fileOp.type} - ${fileOp.description}`
+        );
+        result.capabilities.requiresApproval.push({
+          type: fileOp.type,
+          description: fileOp.description,
+          action: fileOp.action,
+          parameters: fileOp.parameters,
+          risk: fileOp.risk || "medium",
+        });
+      }
+
       // Check for Git operations in user message and AI response
       const gitOperations = this.detectGitOperations(
         parameters.message || "",
@@ -1086,6 +1108,66 @@ class AgentController {
   }
 
   /**
+   * 🔍 Detect file operations from user message and AI response
+   */
+  detectFileOperations(userMessage, aiResponse) {
+    const fileOperations = [];
+    const detectedFiles = new Set(); // Prevent duplicates
+    const combinedText = `${userMessage} ${aiResponse}`;
+
+    this.logger.info(
+      `🔍 File operation detection - User: "${userMessage}", AI: "${aiResponse.substring(
+        0,
+        100
+      )}..."`
+    );
+
+    // Enhanced file creation patterns
+    const createPatterns = [
+      // Direct file creation: "create file called test.html"
+      /(?:create|make|add|generate)\s+(?:a\s+)?(?:new\s+)?file\s+(?:called\s+|named\s+)?["`']?([^"`'\s]+\.[a-zA-Z]+)["`']?/gi,
+      // AI response: "I'll create test.html"
+      /(?:I'll|I will|Let me)\s+create\s+(?:a\s+)?(?:new\s+)?file\s+["`']?([^"`'\s]+\.[a-zA-Z]+)["`']?/gi,
+      // Multiple files: "create index.html and styles.css"
+      /(?:create|make|add|generate)\s+([a-zA-Z0-9_\-]+\.[a-zA-Z]+)(?:\s+and\s+([a-zA-Z0-9_\-]+\.[a-zA-Z]+))?/gi,
+      // File mentions in paths: "templates/file.html"
+      /(?:^|\s)([a-zA-Z0-9_\-]+\/[a-zA-Z0-9_\-]+\.[a-zA-Z]+)(?:\s|$)/gi,
+      // Explicit file creation: "Creating: file.html"
+      /Creating:\s*([^"`'\s]+\.[a-zA-Z]+)/gi,
+    ];
+
+    for (const pattern of createPatterns) {
+      let match;
+      // Reset regex lastIndex to avoid issues with global flag
+      pattern.lastIndex = 0;
+
+      while ((match = pattern.exec(combinedText)) !== null) {
+        // Handle multiple captures (for "file1 and file2" pattern)
+        for (let i = 1; i < match.length; i++) {
+          const fileName = match[i];
+          if (fileName && !detectedFiles.has(fileName)) {
+            detectedFiles.add(fileName);
+            this.logger.info(`🔍 Detected file creation: ${fileName}`);
+
+            fileOperations.push({
+              type: "file_creation",
+              description: `Create file: ${fileName}`,
+              action: "create_file",
+              parameters: {
+                fileName: fileName,
+                content: this.extractFileContent(aiResponse, fileName) || "",
+              },
+              risk: "medium",
+            });
+          }
+        }
+      }
+    }
+
+    return fileOperations;
+  }
+
+  /**
    * 🔍 Detect Git operations from user message and AI response
    */
   detectGitOperations(userMessage, aiResponse) {
@@ -1207,6 +1289,107 @@ class AgentController {
     }
 
     return [...new Set(files)];
+  }
+
+  /**
+   * 📄 Extract file content from AI response
+   */
+  extractFileContent(aiResponse, fileName) {
+    try {
+      // Look for code blocks that might contain the file content
+      const codeBlocks = this.extractCodeBlocks(aiResponse);
+
+      // Try to find a code block that matches the file type
+      const fileExt = fileName.split(".").pop().toLowerCase();
+      const langMap = {
+        html: ["html", "htm"],
+        js: ["javascript", "js"],
+        ts: ["typescript", "ts"],
+        css: ["css"],
+        json: ["json"],
+        md: ["markdown", "md"],
+        py: ["python", "py"],
+        java: ["java"],
+        cpp: ["cpp", "c++"],
+        c: ["c"],
+        cs: ["csharp", "c#"],
+        php: ["php"],
+        rb: ["ruby"],
+        go: ["go"],
+        rs: ["rust"],
+      };
+
+      // Find matching code block
+      for (const block of codeBlocks) {
+        const blockLang = block.language.toLowerCase();
+        if (langMap[fileExt] && langMap[fileExt].includes(blockLang)) {
+          return block.code;
+        }
+      }
+
+      // If no specific match, return the first code block
+      if (codeBlocks.length > 0) {
+        return codeBlocks[0].code;
+      }
+
+      // Generate basic template if no content found
+      return this.generateBasicFileTemplate(fileName);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to extract file content for ${fileName}:`,
+        error
+      );
+      return this.generateBasicFileTemplate(fileName);
+    }
+  }
+
+  /**
+   * 📄 Generate basic file template
+   */
+  generateBasicFileTemplate(fileName) {
+    const ext = fileName.split(".").pop().toLowerCase();
+    const baseName = fileName.split(".")[0];
+
+    switch (ext) {
+      case "html":
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${baseName}</title>
+</head>
+<body>
+    <h1>${baseName}</h1>
+    <!-- Content generated by NOX 🦊 -->
+</body>
+</html>`;
+      case "js":
+        return `/**
+ * ${baseName}
+ * Generated by NOX 🦊
+ */
+
+console.log('Hello from ${baseName}!');`;
+      case "css":
+        return `/* ${baseName} styles - Generated by NOX 🦊 */
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+}`;
+      case "md":
+        return `# ${baseName}
+
+Generated by NOX 🦊
+
+## Description
+
+Add your content here.`;
+      default:
+        return `// ${baseName} - Generated by NOX 🦊\n\n// Add your content here`;
+    }
   }
 
   /**

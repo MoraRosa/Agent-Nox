@@ -272,8 +272,22 @@ class NoxChatViewProvider {
       });
 
       // 🔴 PHASE 3: Execute capabilities from AI response
+      this.logger.info(
+        `🔍 DEBUG: aiResponse.capabilities exists: ${!!aiResponse.capabilities}`
+      );
       if (aiResponse.capabilities) {
+        this.logger.info(
+          `🔍 DEBUG: capabilities object:`,
+          aiResponse.capabilities
+        );
+        this.logger.info(
+          `🔍 DEBUG: requiresApproval length: ${
+            aiResponse.capabilities.requiresApproval?.length || 0
+          }`
+        );
         await this.executeCapabilitiesFromResponse(aiResponse.capabilities);
+      } else {
+        this.logger.warn(`🔍 DEBUG: No capabilities detected in AI response`);
       }
 
       this.logger.info(

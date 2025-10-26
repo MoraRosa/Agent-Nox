@@ -741,6 +741,19 @@ declare class AgentController {
      */
     detectTestFiles(noxContext: any): any;
     /**
+     * 🔍 Detect file operations from user message and AI response
+     */
+    detectFileOperations(userMessage: any, aiResponse: any): {
+        type: string;
+        description: string;
+        action: string;
+        parameters: {
+            fileName: string;
+            content: string;
+        };
+        risk: string;
+    }[];
+    /**
      * 🔍 Detect Git operations from user message and AI response
      */
     detectGitOperations(userMessage: any, aiResponse: any): ({
@@ -777,6 +790,14 @@ declare class AgentController {
      * 📄 Extract file mentions from text
      */
     extractFileMentions(text: any): string[];
+    /**
+     * 📄 Extract file content from AI response
+     */
+    extractFileContent(aiResponse: any, fileName: any): string;
+    /**
+     * 📄 Generate basic file template
+     */
+    generateBasicFileTemplate(fileName: any): string;
     /**
      * 🚀 Execute capability from result
      */
