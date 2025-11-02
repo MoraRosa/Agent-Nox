@@ -37,38 +37,31 @@ class NoxExtension {
     const startTime = Date.now();
 
     try {
-      console.log("🦊 Step 1: Setting context...");
       this.context = context;
 
-      console.log("🦊 Step 2: Initializing core services...");
       // Initialize core services
       await this.initializeCore();
 
-      console.log("🦊 Step 3: Registering commands...");
       // Register commands
       await this.registerCommands();
 
-      console.log("🦊 Step 4: Registering sidebar provider...");
       // Register sidebar provider
       await this.registerSidebarProvider();
 
-      console.log("🦊 Step 5: Setting up event listeners...");
       // Set up event listeners
       this.setupEventListeners();
 
-      console.log("🦊 Step 6: Marking as activated...");
       // Mark as activated
       this.isActivated = true;
       await vscode.commands.executeCommand("setContext", "nox.activated", true);
 
       const activationTime = Date.now() - startTime;
-      console.log(`🦊 Step 7: Activation completed in ${activationTime}ms`);
+      console.log(`🦊 Nox activated in ${activationTime}ms`);
       this.logger.info(
         `🦊 Nox extension activated successfully in ${activationTime}ms`
       );
       this.performanceMonitor.recordMetric("activation_time", activationTime);
 
-      console.log("🦊 Step 8: Showing welcome message...");
       // Show welcome message for first-time users
       await this.showWelcomeMessage();
     } catch (error) {
@@ -85,23 +78,19 @@ class NoxExtension {
    */
   async initializeCore() {
     try {
-      console.log("🦊 Core Step 1: Creating logger...");
       // Initialize logger first
       this.logger = new Logger(this.context);
       this.logger.info("Initializing Nox extension core services...");
 
-      console.log("🦊 Core Step 2: Creating performance monitor...");
       // Initialize performance monitoring
       this.performanceMonitor = new PerformanceMonitor(
         this.context,
         this.logger
       );
 
-      console.log("🦊 Core Step 3: Creating audit logger...");
       // Initialize audit logging
       this.auditLogger = new AuditLogger(this.context, this.logger);
 
-      console.log("🦊 Core Step 4: Creating agent controller...");
       // Initialize main agent controller
       this.agentController = new AgentController(
         this.context,
@@ -109,15 +98,12 @@ class NoxExtension {
         this.performanceMonitor
       );
 
-      console.log("🦊 Core Step 5: Initializing agent controller...");
       await this.agentController.initialize();
 
-      console.log("🦊 Core Step 6: Creating theme service...");
       // Initialize enterprise theme service
       this.themeService = new EnterpriseThemeService(this.context);
       await this.themeService.initialize();
 
-      console.log("🦊 Core Step 7: Initializing debug mode...");
       // Initialize debug mode from settings
       const config = vscode.workspace.getConfiguration("nox");
       this.debugMode = config.get("debugMode", false);
@@ -126,7 +112,6 @@ class NoxExtension {
       }
       this.logger.info(`🐛 Debug mode initialized: ${this.debugMode}`);
 
-      console.log("🦊 Core Step 8: Core services initialized!");
       this.logger.info("Core services initialized successfully");
     } catch (error) {
       console.error("🦊 Core initialization failed:", error);

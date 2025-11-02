@@ -25,6 +25,9 @@ class NoxChatViewProvider {
    * 🎨 WebviewViewProvider interface - called when view is first shown
    */
   resolveWebviewView(webviewView, context, token) {
+    this.logger.info(
+      "🦊 [EXTENSION] resolveWebviewView called - webview is becoming visible"
+    );
     this.webviewView = webviewView;
 
     // Configure webview
@@ -40,9 +43,11 @@ class NoxChatViewProvider {
     };
 
     // Set initial content
+    this.logger.info("🦊 [EXTENSION] Setting webview HTML content");
     webviewView.webview.html = this.getWebviewContent();
 
     // Setup message handling (must be done before content loads)
+    this.logger.info("🦊 [EXTENSION] Setting up message handling");
     this.setupMessageHandling();
 
     // Setup view events
@@ -88,6 +93,7 @@ class NoxChatViewProvider {
               break;
 
             case "ready":
+              this.logger.info("🦊 [EXTENSION] Webview ready message received");
               await this.handleWebviewReady();
               break;
 
@@ -960,17 +966,23 @@ class NoxChatViewProvider {
    */
   async sendProviderStatus() {
     try {
+      this.logger.info("🦊 [EXTENSION] sendProviderStatus called");
+
       if (!this.agentController?.aiClient) {
-        this.logger.warn("🦊 No aiClient available for provider status");
+        this.logger.warn(
+          "🦊 [EXTENSION] No aiClient available for provider status"
+        );
         return;
       }
+
+      this.logger.info("🦊 [EXTENSION] aiClient is available");
 
       const currentProviderObj =
         this.agentController.aiClient.getCurrentProvider();
 
       if (!currentProviderObj || !currentProviderObj.id) {
         this.logger.error(
-          "🦊 Invalid currentProvider object:",
+          "🦊 [EXTENSION] Invalid currentProvider object:",
           currentProviderObj
         );
         return;
@@ -1000,9 +1012,20 @@ class NoxChatViewProvider {
         providers: providerStatus,
       };
 
+      this.logger.info("🦊 [EXTENSION] Sending provider status to webview:", {
+        currentProvider,
+        currentModel,
+        providerCount: Object.keys(providerStatus).length,
+      });
+
       this.sendMessageToWebview(messageData);
+
+      this.logger.info("🦊 [EXTENSION] Provider status sent successfully");
     } catch (error) {
-      this.logger.error("Failed to send provider status:", error);
+      this.logger.error(
+        "🦊 [EXTENSION] Failed to send provider status:",
+        error
+      );
     }
   }
 
@@ -1047,14 +1070,31 @@ class NoxChatViewProvider {
    * 🚀 Handle webview ready event
    */
   async handleWebviewReady() {
-    // Send current provider status (includes provider, model, and API key status)
-    await this.sendProviderStatus();
+    try {
+      this.logger.info("🦊 [EXTENSION] handleWebviewReady started");
 
-    // Load chat history
-    await this.loadChatHistory();
+      // Send current provider status (includes provider, model, and API key status)
+      this.logger.info("🦊 [EXTENSION] Calling sendProviderStatus...");
+      await this.sendProviderStatus();
+      this.logger.info("🦊 [EXTENSION] sendProviderStatus completed");
 
-    // Apply current theme to chat sidebar
-    await this.applyCurrentTheme();
+      // Load chat history
+      this.logger.info("🦊 [EXTENSION] Calling loadChatHistory...");
+      await this.loadChatHistory();
+      this.logger.info("🦊 [EXTENSION] loadChatHistory completed");
+
+      // Apply current theme to chat sidebar
+      this.logger.info("🦊 [EXTENSION] Calling applyCurrentTheme...");
+      await this.applyCurrentTheme();
+      this.logger.info("🦊 [EXTENSION] applyCurrentTheme completed");
+
+      this.logger.info(
+        "🦊 [EXTENSION] handleWebviewReady completed successfully"
+      );
+    } catch (error) {
+      this.logger.error("🦊 [EXTENSION] Error in handleWebviewReady:", error);
+      throw error;
+    }
   }
 
   /**
@@ -1062,9 +1102,6 @@ class NoxChatViewProvider {
    */
   async applyCurrentTheme() {
     try {
-      console.log("🎨 [DEBUG] applyCurrentTheme called");
-      console.log("🎨 [DEBUG] themeService available:", !!this.themeService);
-
       if (!this.themeService) {
         console.warn("🎨 Theme service not available for chat sidebar");
         this.logger.warn("🎨 Theme service not available for chat sidebar");
@@ -1073,10 +1110,6 @@ class NoxChatViewProvider {
 
       // Get current theme
       const currentTheme = this.themeService.getCurrentTheme();
-      console.log(
-        "🎨 [DEBUG] Current theme from service:",
-        currentTheme?.name || "null"
-      );
 
       if (!currentTheme) {
         console.warn("🎨 No current theme found, using default");
@@ -1189,6 +1222,8 @@ class NoxChatViewProvider {
    */
   getWebviewContent() {
     const nonce = this.getNonce();
+    const fs = require("fs");
+    const path = require("path");
 
     // Get the bundled webview resources
     const webviewUri = this.webviewView.webview.asWebviewUri(
@@ -1196,7 +1231,7 @@ class NoxChatViewProvider {
         this.context.extensionUri,
         "out",
         "webview",
-        "webview.js"
+        "main.js"
       )
     );
 
@@ -1208,6 +1243,41 @@ class NoxChatViewProvider {
         "vendors.js"
       )
     );
+
+    this.logger.info("🦊 [EXTENSION] Webview script URIs:");
+    this.logger.info(`  - vendors: ${vendorsUri}`);
+    this.logger.info(`  - main: ${webviewUri}`);
+
+    // 🎨 Read and embed CSS files directly (CRITICAL FIX for CSS rendering)
+    let embeddedCSS = "";
+    try {
+      const enterpriseStylesPath = path.join(
+        this.context.extensionPath,
+        "src",
+        "webview",
+        "enterprise-styles.css"
+      );
+      const markdownStylesPath = path.join(
+        this.context.extensionPath,
+        "src",
+        "webview",
+        "markdown-styles.css"
+      );
+
+      if (fs.existsSync(enterpriseStylesPath)) {
+        const enterpriseCSS = fs.readFileSync(enterpriseStylesPath, "utf8");
+        embeddedCSS += enterpriseCSS;
+        this.logger.info("✅ Embedded enterprise-styles.css");
+      }
+
+      if (fs.existsSync(markdownStylesPath)) {
+        const markdownCSS = fs.readFileSync(markdownStylesPath, "utf8");
+        embeddedCSS += "\n\n" + markdownCSS;
+        this.logger.info("✅ Embedded markdown-styles.css");
+      }
+    } catch (error) {
+      this.logger.warn("⚠️ Failed to read CSS files:", error);
+    }
 
     // 🎨 Get current theme CSS variables for initial load
     let themeCSS = "";
@@ -1248,35 +1318,17 @@ class NoxChatViewProvider {
 
             // Apply theme immediately
             applyTheme();
-            console.log('🎨 [INIT] Theme applied on page load: ${
-              currentTheme.name
-            }');
 
             // Re-apply theme after DOM is fully ready
             if (document.readyState === 'loading') {
-              document.addEventListener('DOMContentLoaded', () => {
-                applyTheme();
-                console.log('🎨 [INIT] Theme re-applied after DOMContentLoaded: ${
-                  currentTheme.name
-                }');
-              });
+              document.addEventListener('DOMContentLoaded', applyTheme);
             }
 
             // Re-apply theme after a short delay to ensure bundled CSS has loaded
-            setTimeout(() => {
-              applyTheme();
-              console.log('🎨 [INIT] Theme re-applied after bundled JS load: ${
-                currentTheme.name
-              }');
-            }, 100);
+            setTimeout(applyTheme, 100);
 
             // Re-apply theme after window load
-            window.addEventListener('load', () => {
-              applyTheme();
-              console.log('🎨 [INIT] Theme re-applied after window load: ${
-                currentTheme.name
-              }');
-            });
+            window.addEventListener('load', applyTheme);
           })();
         </script>
           `;
@@ -1300,7 +1352,11 @@ class NoxChatViewProvider {
     } 'unsafe-eval'; font-src https:; media-src * data: blob:;">
         <meta http-equiv="Permissions-Policy" content="microphone=*, camera=*, geolocation=*">
         <title>🦊 Nox Chat</title>
-        <!-- Bundled styles will be injected here by webpack style-loader -->
+
+        <!-- 🎨 CRITICAL FIX: Embed all CSS directly in HTML to prevent style-loader race conditions -->
+        <style nonce="${nonce}">
+          ${embeddedCSS}
+        </style>
     </head>
     <body>
         <div class="aurora-bg"></div>
@@ -1410,10 +1466,28 @@ class NoxChatViewProvider {
         </div>
 
         <!-- Load bundled JavaScript -->
-        <script nonce="${nonce}" src="${vendorsUri}"></script>
-        <script nonce="${nonce}" src="${webviewUri}"></script>
+        <script nonce="${nonce}">
+          // Global error handler to catch any script errors
+          window.addEventListener('error', function(event) {
+            console.error('❌ Script error:', event.error || event.message);
+          });
 
-        <!-- Apply theme CSS AFTER bundled styles are injected (ensures theme overrides defaults) -->
+          window.addEventListener('unhandledrejection', function(event) {
+            console.error('❌ Unhandled rejection:', event.reason);
+          });
+        </script>
+        <script nonce="${nonce}" src="${vendorsUri}" onerror="console.error('❌ Failed to load vendors.js')"></script>
+        <script nonce="${nonce}" src="${webviewUri}" onerror="console.error('❌ Failed to load main.js')"></script>
+        <script nonce="${nonce}">
+          // Verify app loaded
+          setTimeout(() => {
+            if (typeof NoxChatApp === 'undefined') {
+              console.error('❌ NoxChatApp failed to load - check for errors above');
+            }
+          }, 100);
+        </script>
+
+        <!-- Apply theme CSS variables (ensures theme overrides embedded defaults) -->
         ${themeCSS}
 
         <!-- Apply theme variables via JavaScript (double-layer protection) -->

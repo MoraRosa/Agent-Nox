@@ -88,8 +88,10 @@ class NoxChatApp {
   }
 
   private initialize(): void {
-    // Test markdown libraries
-    this.testMarkdownLibraries();
+    // Test markdown libraries (only in debug mode)
+    if (this.debugMode) {
+      this.testMarkdownLibraries();
+    }
 
     // Wait for DOM to be ready
     if (document.readyState === 'loading') {
@@ -102,12 +104,8 @@ class NoxChatApp {
   }
 
   private testMarkdownLibraries(): void {
-    console.log('🧪 Testing markdown libraries...');
     const testsPassed = MarkdownTester.runAllTests();
-
-    if (testsPassed) {
-      console.log('✅ All markdown libraries ready for enterprise use');
-    } else {
+    if (!testsPassed) {
       console.error('❌ Markdown library tests failed');
     }
   }
@@ -193,7 +191,6 @@ class NoxChatApp {
   private setupHeaderControls(): void {
     // Header controls are now handled by VS Code native header
     // Toggle functionality is handled via extension message in handleExtensionMessage()
-    console.log('🦊 Header controls setup - using VS Code native header');
   }
 
   private toggleProviderSection(): void {
@@ -248,11 +245,17 @@ class NoxChatApp {
 
   private setupMessageHandling(): void {
     window.addEventListener('message', (event) => {
+      if (this.debugMode) {
+        console.log('🦊 [WEBVIEW] Received:', event.data?.type);
+      }
       this.handleExtensionMessage(event.data);
     });
   }
 
   private sendMessage(message: BaseMessage): void {
+    if (this.debugMode) {
+      console.log('🦊 [WEBVIEW] Sending:', message.type);
+    }
     this.vscode.postMessage(message);
   }
 
@@ -261,15 +264,14 @@ class NoxChatApp {
    */
   private handleCSSInjection(message: any): void {
     try {
-      console.log('🎨 Applying Aurora theme CSS variables:', message.theme?.name);
-
       // Execute the CSS injection script with !important flags
       eval(message.script);
 
-      console.log('🎨 Aurora theme CSS injection successful');
-      console.log('🎨 Applied theme:', message.theme?.name);
+      if (this.debugMode) {
+        console.log('🎨 Theme applied:', message.theme?.name);
+      }
     } catch (error) {
-      console.error('🎨 Aurora theme CSS injection failed:', error);
+      console.error('🎨 Theme CSS injection failed:', error);
     }
   }
 
@@ -278,8 +280,6 @@ class NoxChatApp {
    */
   private handleThemeChanged(message: any): void {
     try {
-      console.log('🎨 Theme changed:', message.theme?.name);
-
       if (message.theme?.cssVariables) {
         // Apply CSS variables from theme change
         const root = document.documentElement;
@@ -299,7 +299,9 @@ class NoxChatApp {
           element.style.animation = '';
         });
 
-        console.log('🎨 Theme change applied successfully:', message.theme.name);
+        if (this.debugMode) {
+          console.log('🎨 Theme changed:', message.theme.name);
+        }
       }
     } catch (error) {
       console.error('🎨 Theme change failed:', error);
@@ -666,7 +668,11 @@ class NoxChatApp {
   }
 
   private updateProviderStatus(data: any): void {
-    // Validate data structure with detailed logging
+    if (this.debugMode) {
+      console.log('🦊 [WEBVIEW] updateProviderStatus:', data);
+    }
+
+    // Validate data structure
     if (!data) {
       console.warn('🦊 No data received for provider status');
       return;
@@ -863,7 +869,6 @@ class NoxChatApp {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      console.log('🎤 Speech recognition not supported in this browser');
       this.speechSupported = false;
       if (this.elements.micBtn) {
         this.elements.micBtn.disabled = true;
@@ -883,7 +888,6 @@ class NoxChatApp {
 
     // Event handlers
     this.speechRecognition.onstart = () => {
-      console.log('🎤 Speech recognition started');
       this.isRecording = true;
       this.updateMicButtonState();
     };
@@ -952,7 +956,6 @@ class NoxChatApp {
     };
 
     this.speechRecognition.onend = () => {
-      console.log('🎤 Speech recognition ended');
       this.isRecording = false;
       this.updateMicButtonState();
 
@@ -961,13 +964,6 @@ class NoxChatApp {
         this.elements.messageInput.placeholder = 'Ask Nox anything about your code...';
       }
     };
-
-    console.log('🎤 Speech recognition initialized successfully');
-
-    // Check if we're in VS Code webview and warn about limitations
-    if (typeof acquireVsCodeApi !== 'undefined') {
-      console.log('🎤 Running in VS Code webview - microphone access may be limited');
-    }
   }
 
   /**
@@ -1101,8 +1097,6 @@ class NoxChatApp {
    */
   private async requestMicrophonePermission(): Promise<void> {
     try {
-      console.log('🎤 Requesting microphone permission...');
-
       // Show immediate feedback
       this.showVoiceError('🎤 Attempting to enable microphone access...', false);
 
@@ -1127,7 +1121,6 @@ class NoxChatApp {
           this.hideVoiceError();
           this.updateMicButtonState();
 
-          console.log('🎤 Microphone permission granted via getUserMedia');
           this.showVoiceError('✅ Microphone access granted! Click the microphone button to start voice input.', false);
 
           // Auto-hide success message after 3 seconds
@@ -1149,7 +1142,6 @@ class NoxChatApp {
       // Method 2: Try direct speech recognition permission test
       if (this.speechRecognition) {
         try {
-          console.log('🎤 Testing speech recognition permission...');
 
           // Create a promise to handle the permission test
           const permissionTest = new Promise((resolve, reject) => {
@@ -1177,7 +1169,6 @@ class NoxChatApp {
           this.hideVoiceError();
           this.updateMicButtonState();
 
-          console.log('🎤 Speech recognition permission test passed');
           this.showVoiceError('✅ Voice recognition enabled! Click the microphone button to start.', false);
 
           // Auto-hide success message after 3 seconds
@@ -1185,7 +1176,7 @@ class NoxChatApp {
           return;
 
         } catch (speechError: any) {
-          console.log('🎤 Speech recognition permission test failed:', speechError);
+          // Permission test failed, continue to next method
         }
       }
 
@@ -1458,8 +1449,45 @@ class NoxChatApp {
   }
 }
 
+// Make NoxChatApp available globally for debugging and external access
+(window as any).NoxChatApp = NoxChatApp;
+
 // Initialize the app when the script loads
-new NoxChatApp();
+// Use IIFE to force immediate execution with comprehensive error handling
+(() => {
+  try {
+    const app = new NoxChatApp();
+    (window as any).noxApp = app;
+  } catch (error) {
+    console.error('🦊 [WEBVIEW] ❌ CRITICAL ERROR during NoxChatApp instantiation:', error);
+    console.error('🦊 [WEBVIEW] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    console.error('🦊 [WEBVIEW] Error message:', error instanceof Error ? error.message : String(error));
+
+    // Display error in the UI
+    document.addEventListener('DOMContentLoaded', () => {
+      const body = document.body;
+      if (body) {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+          position: fixed;
+          top: 20px;
+          left: 20px;
+          right: 20px;
+          background: #ef4444;
+          color: white;
+          padding: 16px;
+          border-radius: 8px;
+          font-family: monospace;
+          font-size: 12px;
+          z-index: 10000;
+          white-space: pre-wrap;
+        `;
+        errorDiv.textContent = `❌ CRITICAL ERROR: Failed to initialize Nox Chat\n\n${error instanceof Error ? error.message : String(error)}\n\nCheck browser console for details.`;
+        body.appendChild(errorDiv);
+      }
+    });
+  }
+})();
 
 // Test markdown rendering on load
 
