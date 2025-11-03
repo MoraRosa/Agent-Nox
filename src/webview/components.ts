@@ -30,7 +30,11 @@ export class MessageComponent {
       const renderer = NoxMarkdownRenderer.getInstance();
       const markdownContainer = document.createElement('div');
       markdownContainer.className = 'nox-markdown';
-      markdownContainer.innerHTML = renderer.render(props.message.content);
+
+      // ✅ SECURITY: renderer.render() already sanitizes with DOMPurify
+      // No need for double sanitization - markdown-renderer.ts handles it
+      const sanitizedHTML = renderer.render(props.message.content);
+      markdownContainer.innerHTML = sanitizedHTML;
       contentEl.appendChild(markdownContainer);
     } else {
       // User messages remain as plain text for clean appearance
@@ -604,11 +608,17 @@ export class StreamingMessageComponent {
 
     const statusEl = document.createElement('span');
     statusEl.className = 'streaming-status';
-    statusEl.innerHTML = '🤖 Assistant <span class="streaming-badge">STREAMING</span>';
+
+    // ✅ SECURITY: Build status with safe DOM methods
+    statusEl.textContent = '🤖 Assistant ';
+    const badge = document.createElement('span');
+    badge.className = 'streaming-badge';
+    badge.textContent = 'STREAMING';
+    statusEl.appendChild(badge);
 
     const stopBtn = document.createElement('button');
     stopBtn.className = 'stream-stop-btn';
-    stopBtn.innerHTML = '⏹️ Stop';
+    stopBtn.textContent = '⏹️ Stop';
     stopBtn.title = 'Stop generating response';
     stopBtn.onclick = () => this.stopStreaming(messageId);
 
@@ -633,15 +643,31 @@ export class StreamingMessageComponent {
     // Progress bar section
     const progressEl = document.createElement('div');
     progressEl.className = 'streaming-progress';
-    progressEl.innerHTML = `
-      <div class="progress-info">
-        <span class="progress-text">🔄 Generating response...</span>
-        <span class="token-count">0 tokens</span>
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill"></div>
-      </div>
-    `;
+
+    // ✅ SECURITY: Build progress bar with safe DOM methods
+    const progressInfo = document.createElement('div');
+    progressInfo.className = 'progress-info';
+
+    const progressText = document.createElement('span');
+    progressText.className = 'progress-text';
+    progressText.textContent = '🔄 Generating response...';
+
+    const tokenCount = document.createElement('span');
+    tokenCount.className = 'token-count';
+    tokenCount.textContent = '0 tokens';
+
+    progressInfo.appendChild(progressText);
+    progressInfo.appendChild(tokenCount);
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'progress-bar';
+
+    const progressFill = document.createElement('div');
+    progressFill.className = 'progress-fill';
+
+    progressBar.appendChild(progressFill);
+    progressEl.appendChild(progressInfo);
+    progressEl.appendChild(progressBar);
 
     messageEl.appendChild(headerEl);
     messageEl.appendChild(contentEl);
@@ -655,11 +681,22 @@ export class StreamingMessageComponent {
    */
   static updateContent(messageId: string, chunk: string, tokens?: number): void {
     const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
-    if (!messageEl || !messageEl.hasAttribute('data-streaming')) return;
+
+    // 🔧 DEBUG: Log what we found
+    if (!messageEl) {
+      console.error(`🚨 [STREAMING] Message element NOT FOUND for ID: ${messageId}`);
+      return;
+    }
+
+    if (!messageEl.hasAttribute('data-streaming')) {
+      console.error(`🚨 [STREAMING] Message element found but missing data-streaming attribute for ID: ${messageId}`);
+      return;
+    }
 
     // Get or create buffer for this message
     let buffer = this.activeBuffers.get(messageId);
     if (!buffer) {
+      console.log(`🔧 [STREAMING] Creating new buffer for message: ${messageId}`);
       buffer = new StreamingBuffer(messageId, (content: string) => {
         this.flushContentToDisplay(messageId, content);
       });
@@ -859,7 +896,7 @@ export class StreamingMessageComponent {
     switch (state) {
       case 'stopping':
         stopBtn.disabled = true;
-        stopBtn.innerHTML = '⏸️ Stopping...';
+        stopBtn.textContent = '⏸️ Stopping...'; // ✅ SECURITY: Use textContent
         stopBtn.title = 'Stopping generation...';
         if (progressText) {
           progressText.textContent = '⏸️ Stopping generation...';
@@ -877,7 +914,7 @@ export class StreamingMessageComponent {
 
       case 'stopped':
         stopBtn.disabled = false;
-        stopBtn.innerHTML = '▶️ Continue';
+        stopBtn.textContent = '▶️ Continue'; // ✅ SECURITY: Use textContent
         stopBtn.title = 'Continue generating response';
         stopBtn.className = 'stream-continue-btn';
         stopBtn.onclick = () => this.continueStreaming(messageId);
@@ -892,7 +929,7 @@ export class StreamingMessageComponent {
 
       case 'continuing':
         stopBtn.disabled = true;
-        stopBtn.innerHTML = '⏳ Resuming...';
+        stopBtn.textContent = '⏳ Resuming...'; // ✅ SECURITY: Use textContent
         stopBtn.title = 'Resuming generation...';
         stopBtn.className = 'stream-stop-btn'; // Will change back to stop when streaming resumes
         if (progressText) {
@@ -962,7 +999,7 @@ export class StreamingMessageComponent {
     const stopBtn = messageEl.querySelector('.stream-stop-btn') as HTMLButtonElement;
 
     if (progressText) {
-      progressText.innerHTML = '❌ Error occurred during streaming';
+      progressText.textContent = '❌ Error occurred during streaming'; // ✅ SECURITY: Use textContent
       progressText.style.color = '#ef4444';
     }
 
@@ -973,7 +1010,11 @@ export class StreamingMessageComponent {
     // Add error message to content
     const textEl = messageEl.querySelector('.streaming-text') as HTMLElement;
     if (textEl) {
-      textEl.innerHTML += `<div class="streaming-error">❌ ${error}</div>`;
+      // ✅ SECURITY: Build error message with safe DOM methods
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'streaming-error';
+      errorDiv.textContent = `❌ ${error}`;
+      textEl.appendChild(errorDiv);
     }
   }
 
@@ -1002,7 +1043,15 @@ export class StreamingMessageComponent {
     // Update status to show stopped state
     const statusEl = messageEl.querySelector('.streaming-status');
     if (statusEl) {
-      statusEl.innerHTML = '🤖 Assistant <span class="streaming-badge stopped">STOPPED</span>';
+      // ✅ SECURITY: Build status with safe DOM methods
+      while (statusEl.firstChild) {
+        statusEl.removeChild(statusEl.firstChild);
+      }
+      statusEl.textContent = '🤖 Assistant ';
+      const badge = document.createElement('span');
+      badge.className = 'streaming-badge stopped';
+      badge.textContent = 'STOPPED';
+      statusEl.appendChild(badge);
     }
 
     // Mark message as stopped (but still streaming-capable)
@@ -1026,7 +1075,15 @@ export class StreamingMessageComponent {
       if (messageEl) {
         const statusEl = messageEl.querySelector('.streaming-status');
         if (statusEl) {
-          statusEl.innerHTML = '🤖 Assistant <span class="streaming-badge">STREAMING</span>';
+          // ✅ SECURITY: Build status with safe DOM methods
+          while (statusEl.firstChild) {
+            statusEl.removeChild(statusEl.firstChild);
+          }
+          statusEl.textContent = '🤖 Assistant ';
+          const badge = document.createElement('span');
+          badge.className = 'streaming-badge';
+          badge.textContent = 'STREAMING';
+          statusEl.appendChild(badge);
         }
 
         // Remove stopped attribute
@@ -1157,7 +1214,7 @@ export class StreamingMessageComponent {
       indicator = document.createElement('div');
       indicator.id = 'streamScrollIndicator';
       indicator.className = 'scroll-indicator';
-      indicator.innerHTML = 'New content below';
+      indicator.textContent = 'New content below'; // ✅ SECURITY: Use textContent
       indicator.onclick = () => this.scrollToBottom();
       document.body.appendChild(indicator);
     }

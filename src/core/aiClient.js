@@ -1,5 +1,6 @@
 const vscode = require("vscode");
 const axios = require("axios");
+const { ErrorBoundary, ErrorSeverity } = require("./errorBoundary");
 
 /**
  * 🦊 Nox AI Client - Multi-provider support with user-controlled API keys
@@ -14,6 +15,13 @@ class AIClient {
     this.currentProvider = "anthropic";
     this.currentModel = null; // Will be set to default model of current provider
     this.debugMode = false; // Debug mode for detailed logging
+
+    // Initialize error boundary
+    this.errorBoundary = new ErrorBoundary(logger, {
+      enableRetry: true,
+      maxRetries: 3,
+      retryDelay: 1000,
+    });
     this.providers = {
       anthropic: {
         name: "🤖 Anthropic Claude",
@@ -294,90 +302,104 @@ class AIClient {
     const provider = this.providers[this.currentProvider];
     const messageId = options.messageId || Date.now().toString();
 
-    try {
-      this.logger.info(
-        `🦊 Sending NOX-conscious streaming request to ${provider.name}...`
-      );
+    // Wrap with error boundary retry logic for network failures
+    return await this.errorBoundary.wrapAsyncWithRetry(
+      async () => {
+        try {
+          this.logger.info(
+            `🦊 Sending NOX-conscious streaming request to ${provider.name}...`
+          );
 
-      // Get API key
-      const apiKey = await this.getApiKey(this.currentProvider);
-      if (!apiKey) {
-        throw new Error(
-          `No API key configured for ${provider.name}. Please set up your API key first.`
-        );
+          // Get API key
+          const apiKey = await this.getApiKey(this.currentProvider);
+          if (!apiKey) {
+            throw new Error(
+              `No API key configured for ${provider.name}. Please set up your API key first.`
+            );
+          }
+
+          // Route to appropriate provider with system message support
+          const requestOptions = {
+            ...options,
+            model: options.model || this.currentModel,
+          };
+
+          switch (this.currentProvider) {
+            case "anthropic":
+              await this.callAnthropicStreamingAPIWithSystem(
+                apiKey,
+                systemPrompt,
+                userPrompt,
+                requestOptions,
+                onChunk,
+                onComplete,
+                abortController
+              );
+              break;
+            case "openai":
+              // Real streaming for OpenAI with NOX consciousness
+              await this.callOpenAIStreamingAPIWithSystem(
+                apiKey,
+                systemPrompt,
+                userPrompt,
+                requestOptions,
+                onChunk,
+                onComplete,
+                abortController
+              );
+              break;
+            case "deepseek":
+              // Real streaming for DeepSeek with NOX consciousness
+              await this.callDeepSeekStreamingAPIWithSystem(
+                apiKey,
+                systemPrompt,
+                userPrompt,
+                requestOptions,
+                onChunk,
+                onComplete,
+                abortController
+              );
+              break;
+            case "local":
+              // Real streaming for Local LLMs with NOX consciousness
+              await this.callLocalStreamingAPIWithSystem(
+                systemPrompt,
+                userPrompt,
+                requestOptions,
+                onChunk,
+                onComplete,
+                abortController
+              );
+              break;
+            default:
+              throw new Error(`Unsupported provider: ${this.currentProvider}`);
+          }
+
+          timer.end();
+          this.performanceMonitor.recordMetric(
+            "ai_streaming_request_with_system_success",
+            1
+          );
+        } catch (error) {
+          timer.end();
+          this.performanceMonitor.recordMetric(
+            "ai_streaming_request_with_system_error",
+            1
+          );
+          this.logger.error(`NOX-conscious streaming request failed:`, error);
+          throw error;
+        }
+      },
+      `Streaming request to ${provider.name}`,
+      {
+        maxRetries: 2, // Retry network failures up to 2 times
+        retryDelay: 1000,
+        shouldRetry: (error) => {
+          // Only retry network failures, not API errors (401, 403, etc.)
+          return this.errorBoundary.isRetryableError(error);
+        },
       }
-
-      // Route to appropriate provider with system message support
-      const requestOptions = {
-        ...options,
-        model: options.model || this.currentModel,
-      };
-
-      switch (this.currentProvider) {
-        case "anthropic":
-          await this.callAnthropicStreamingAPIWithSystem(
-            apiKey,
-            systemPrompt,
-            userPrompt,
-            requestOptions,
-            onChunk,
-            onComplete,
-            abortController
-          );
-          break;
-        case "openai":
-          // Real streaming for OpenAI with NOX consciousness
-          await this.callOpenAIStreamingAPIWithSystem(
-            apiKey,
-            systemPrompt,
-            userPrompt,
-            requestOptions,
-            onChunk,
-            onComplete,
-            abortController
-          );
-          break;
-        case "deepseek":
-          // Real streaming for DeepSeek with NOX consciousness
-          await this.callDeepSeekStreamingAPIWithSystem(
-            apiKey,
-            systemPrompt,
-            userPrompt,
-            requestOptions,
-            onChunk,
-            onComplete,
-            abortController
-          );
-          break;
-        case "local":
-          // Real streaming for Local LLMs with NOX consciousness
-          await this.callLocalStreamingAPIWithSystem(
-            systemPrompt,
-            userPrompt,
-            requestOptions,
-            onChunk,
-            onComplete,
-            abortController
-          );
-          break;
-        default:
-          throw new Error(`Unsupported provider: ${this.currentProvider}`);
-      }
-
-      timer.end();
-      this.performanceMonitor.recordMetric(
-        "ai_streaming_request_with_system_success",
-        1
-      );
-    } catch (error) {
-      timer.end();
-      this.performanceMonitor.recordMetric(
-        "ai_streaming_request_with_system_error",
-        1
-      );
-      this.logger.error(`NOX-conscious streaming request failed:`, error);
-      throw error;
-    }
+    );
   }
 
   /**
@@ -672,16 +694,37 @@ class AIClient {
 
   /**
    * 🦊 Call Anthropic Claude API with system prompt - NOX CONSCIOUSNESS
+   * @param {string} apiKey - Anthropic API key
+   * @param {string} systemPrompt - System prompt for AI identity
+   * @param {string|Array} userPromptOrMessages - Single user prompt OR array of message objects [{role, content}]
+   * @param {Object} options - Request options
    */
   async callAnthropicAPIWithSystem(
     apiKey,
     systemPrompt,
-    userPrompt,
+    userPromptOrMessages,
     options = {}
   ) {
     try {
       const model = options.model || this.providers.anthropic.defaultModel;
       const maxTokens = options.maxTokens || 4000;
+
+      // Support both single prompt (backward compatible) and messages array (Phase 2A)
+      let messages;
+      if (typeof userPromptOrMessages === "string") {
+        // Backward compatible: single user prompt
+        messages = [
+          {
+            role: "user",
+            content: userPromptOrMessages,
+          },
+        ];
+      } else if (Array.isArray(userPromptOrMessages)) {
+        // Phase 2A: messages array for conversation history
+        messages = userPromptOrMessages;
+      } else {
+        throw new Error("userPromptOrMessages must be a string or array");
+      }
 
       const response = await axios.post(
         "https://api.anthropic.com/v1/messages",
@@ -689,12 +732,7 @@ class AIClient {
           model: model,
           max_tokens: maxTokens,
           system: systemPrompt,
-          messages: [
-            {
-              role: "user",
-              content: userPrompt,
-            },
-          ],
+          messages: messages,
           temperature: options.temperature || 0.7,
         },
         {
@@ -785,31 +823,54 @@ class AIClient {
 
   /**
    * 🦊 Call OpenAI GPT API with system prompt - NOX CONSCIOUSNESS
+   * @param {string} apiKey - OpenAI API key
+   * @param {string} systemPrompt - System prompt for AI identity
+   * @param {string|Array} userPromptOrMessages - Single user prompt OR array of message objects [{role, content}]
+   * @param {Object} options - Request options
    */
   async callOpenAIAPIWithSystem(
     apiKey,
     systemPrompt,
-    userPrompt,
+    userPromptOrMessages,
     options = {}
   ) {
     try {
       const model = options.model || this.providers.openai.defaultModel;
       const maxTokens = options.maxTokens || 4000;
 
+      // Support both single prompt (backward compatible) and messages array (Phase 2A)
+      let messages;
+      if (typeof userPromptOrMessages === "string") {
+        // Backward compatible: single user prompt
+        messages = [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          {
+            role: "user",
+            content: userPromptOrMessages,
+          },
+        ];
+      } else if (Array.isArray(userPromptOrMessages)) {
+        // Phase 2A: messages array for conversation history
+        // OpenAI includes system message in messages array
+        messages = [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          ...userPromptOrMessages,
+        ];
+      } else {
+        throw new Error("userPromptOrMessages must be a string or array");
+      }
+
       const response = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
           model: model,
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt,
-            },
-            {
-              role: "user",
-              content: userPrompt,
-            },
-          ],
+          messages: messages,
           max_tokens: maxTokens,
           temperature: options.temperature || 0.7,
         },
@@ -904,7 +965,7 @@ class AIClient {
   async callOpenAIStreamingAPIWithSystem(
     apiKey,
     systemPrompt,
-    userPrompt,
+    userPromptOrMessages,
     options,
     onChunk,
     onComplete,
@@ -913,6 +974,25 @@ class AIClient {
     const model = options.model || this.providers.openai.defaultModel;
     const maxTokens = options.maxTokens || 4000;
     const messageId = options.messageId || Date.now().toString();
+
+    // Support both single prompt (backward compatible) and messages array (Phase 2A)
+    let messages;
+    if (typeof userPromptOrMessages === "string") {
+      // Backward compatible: single user prompt
+      messages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPromptOrMessages },
+      ];
+    } else if (Array.isArray(userPromptOrMessages)) {
+      // Phase 2A: messages array for conversation history
+      // OpenAI includes system message in messages array
+      messages = [
+        { role: "system", content: systemPrompt },
+        ...userPromptOrMessages,
+      ];
+    } else {
+      throw new Error("userPromptOrMessages must be a string or array");
+    }
 
     try {
       console.log(
@@ -929,10 +1009,7 @@ class AIClient {
           },
           body: JSON.stringify({
             model: model,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt },
-            ],
+            messages: messages,
             max_tokens: maxTokens,
             stream: true,
             temperature: options.temperature || 0.7,
@@ -1030,31 +1107,54 @@ class AIClient {
 
   /**
    * 🦊 Call DeepSeek API with system prompt - NOX CONSCIOUSNESS
+   * @param {string} apiKey - DeepSeek API key
+   * @param {string} systemPrompt - System prompt for AI identity
+   * @param {string|Array} userPromptOrMessages - Single user prompt OR array of message objects [{role, content}]
+   * @param {Object} options - Request options
    */
   async callDeepSeekAPIWithSystem(
     apiKey,
     systemPrompt,
-    userPrompt,
+    userPromptOrMessages,
     options = {}
   ) {
     try {
       const model = options.model || this.providers.deepseek.defaultModel;
       const maxTokens = options.maxTokens || 4000;
 
+      // Support both single prompt (backward compatible) and messages array (Phase 2A)
+      let messages;
+      if (typeof userPromptOrMessages === "string") {
+        // Backward compatible: single user prompt
+        messages = [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          {
+            role: "user",
+            content: userPromptOrMessages,
+          },
+        ];
+      } else if (Array.isArray(userPromptOrMessages)) {
+        // Phase 2A: messages array for conversation history
+        // DeepSeek uses OpenAI-compatible format (system message in messages array)
+        messages = [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          ...userPromptOrMessages,
+        ];
+      } else {
+        throw new Error("userPromptOrMessages must be a string or array");
+      }
+
       const response = await axios.post(
         "https://api.deepseek.com/v1/chat/completions",
         {
           model: model,
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt,
-            },
-            {
-              role: "user",
-              content: userPrompt,
-            },
-          ],
+          messages: messages,
           max_tokens: maxTokens,
           temperature: options.temperature || 0.7,
         },
@@ -1143,14 +1243,39 @@ class AIClient {
 
   /**
    * 🦊 Call Local LLM API with system prompt - NOX CONSCIOUSNESS
+   * @param {string} systemPrompt - System prompt for AI identity
+   * @param {string|Array} userPromptOrMessages - Single user prompt OR array of message objects [{role, content}]
+   * @param {Object} options - Request options
    */
-  async callLocalAPIWithSystem(systemPrompt, userPrompt, options = {}) {
+  async callLocalAPIWithSystem(
+    systemPrompt,
+    userPromptOrMessages,
+    options = {}
+  ) {
     try {
       const model = options.model || "llama2";
       const baseUrl = options.baseUrl || this.providers.local.baseUrl;
 
-      // Combine system and user prompts for local models
-      const combinedPrompt = `${systemPrompt}\n\nUser: ${userPrompt}\n\nAssistant:`;
+      // Support both single prompt (backward compatible) and messages array (Phase 2A)
+      let combinedPrompt;
+      if (typeof userPromptOrMessages === "string") {
+        // Backward compatible: single user prompt
+        combinedPrompt = `${systemPrompt}\n\nUser: ${userPromptOrMessages}\n\nAssistant:`;
+      } else if (Array.isArray(userPromptOrMessages)) {
+        // Phase 2A: messages array for conversation history
+        // Combine system prompt and all messages into a single prompt for local models
+        combinedPrompt = `${systemPrompt}\n\n`;
+        for (const msg of userPromptOrMessages) {
+          if (msg.role === "user") {
+            combinedPrompt += `User: ${msg.content}\n\n`;
+          } else if (msg.role === "assistant") {
+            combinedPrompt += `Assistant: ${msg.content}\n\n`;
+          }
+        }
+        combinedPrompt += "Assistant:";
+      } else {
+        throw new Error("userPromptOrMessages must be a string or array");
+      }
 
       const response = await axios.post(
         `${baseUrl}/api/generate`,
@@ -1194,7 +1319,7 @@ class AIClient {
   async callDeepSeekStreamingAPIWithSystem(
     apiKey,
     systemPrompt,
-    userPrompt,
+    userPromptOrMessages,
     options,
     onChunk,
     onComplete,
@@ -1203,6 +1328,25 @@ class AIClient {
     const model = options.model || this.providers.deepseek.defaultModel;
     const maxTokens = options.maxTokens || 4000;
     const messageId = options.messageId || Date.now().toString();
+
+    // Support both single prompt (backward compatible) and messages array (Phase 2A)
+    let messages;
+    if (typeof userPromptOrMessages === "string") {
+      // Backward compatible: single user prompt
+      messages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPromptOrMessages },
+      ];
+    } else if (Array.isArray(userPromptOrMessages)) {
+      // Phase 2A: messages array for conversation history
+      // DeepSeek uses OpenAI-compatible format (system message in messages array)
+      messages = [
+        { role: "system", content: systemPrompt },
+        ...userPromptOrMessages,
+      ];
+    } else {
+      throw new Error("userPromptOrMessages must be a string or array");
+    }
 
     try {
       console.log(
@@ -1219,10 +1363,7 @@ class AIClient {
           },
           body: JSON.stringify({
             model: model,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt },
-            ],
+            messages: messages,
             max_tokens: maxTokens,
             stream: true,
             temperature: options.temperature || 0.7,
@@ -1401,7 +1542,7 @@ class AIClient {
    */
   async callLocalStreamingAPIWithSystem(
     systemPrompt,
-    userPrompt,
+    userPromptOrMessages,
     options,
     onChunk,
     onComplete,
@@ -1411,13 +1552,31 @@ class AIClient {
     const baseUrl = options.baseUrl || this.providers.local.baseUrl;
     const messageId = options.messageId || Date.now().toString();
 
+    // Support both single prompt (backward compatible) and messages array (Phase 2A)
+    let combinedPrompt;
+    if (typeof userPromptOrMessages === "string") {
+      // Backward compatible: single user prompt
+      combinedPrompt = `${systemPrompt}\n\nUser: ${userPromptOrMessages}\n\nAssistant:`;
+    } else if (Array.isArray(userPromptOrMessages)) {
+      // Phase 2A: messages array for conversation history
+      // Combine all messages into a single prompt for local models
+      combinedPrompt = systemPrompt + "\n\n";
+      for (const msg of userPromptOrMessages) {
+        if (msg.role === "user") {
+          combinedPrompt += `User: ${msg.content}\n\n`;
+        } else if (msg.role === "assistant") {
+          combinedPrompt += `Assistant: ${msg.content}\n\n`;
+        }
+      }
+      combinedPrompt += "Assistant:";
+    } else {
+      throw new Error("userPromptOrMessages must be a string or array");
+    }
+
     try {
       console.log(
         `🦊 NOX STREAMING: Starting NOX-conscious Local LLM stream for message: ${messageId}`
       );
-
-      // Combine system and user prompts for local models
-      const combinedPrompt = `${systemPrompt}\n\nUser: ${userPrompt}\n\nAssistant:`;
 
       const response = await fetch(`${baseUrl}/api/generate`, {
         method: "POST",
@@ -1833,7 +1992,7 @@ class AIClient {
   async callAnthropicStreamingAPIWithSystem(
     apiKey,
     systemPrompt,
-    userPrompt,
+    userPromptOrMessages,
     options,
     onChunk,
     onComplete,
@@ -1842,6 +2001,23 @@ class AIClient {
     const model = options.model || this.providers.anthropic.defaultModel;
     const maxTokens = options.maxTokens || 4000;
     const messageId = options.messageId || Date.now().toString();
+
+    // Support both single prompt (backward compatible) and messages array (Phase 2A)
+    let messages;
+    if (typeof userPromptOrMessages === "string") {
+      // Backward compatible: single user prompt
+      messages = [
+        {
+          role: "user",
+          content: userPromptOrMessages,
+        },
+      ];
+    } else if (Array.isArray(userPromptOrMessages)) {
+      // Phase 2A: messages array for conversation history
+      messages = userPromptOrMessages;
+    } else {
+      throw new Error("userPromptOrMessages must be a string or array");
+    }
 
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1855,7 +2031,7 @@ class AIClient {
           model: model,
           max_tokens: maxTokens,
           system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
+          messages: messages,
           stream: true,
           temperature: options.temperature || 0.7,
         }),

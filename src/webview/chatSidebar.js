@@ -1,16 +1,31 @@
 const vscode = require("vscode");
 const VoiceRecordingService = require("../core/voiceRecordingService");
+const { ErrorBoundary, ErrorSeverity } = require("../core/errorBoundary");
 
 /**
  * 🦊 Nox Chat Sidebar - WebviewViewProvider for Sidebar Integration
  * Aurora-themed chat interface embedded in VS Code sidebar (like Augment chat)
  */
 class NoxChatViewProvider {
-  constructor(context, agentController, logger, themeService) {
+  constructor(
+    context,
+    agentController,
+    logger,
+    themeService,
+    debugMode = false
+  ) {
     this.context = context;
     this.agentController = agentController;
     this.logger = logger;
     this.themeService = themeService;
+    this.debugMode = debugMode;
+
+    // Initialize error boundary
+    this.errorBoundary = new ErrorBoundary(logger, {
+      enableRetry: true,
+      maxRetries: 3,
+      retryDelay: 1000,
+    });
 
     // Initialize voice recording service
     this.voiceRecordingService = new VoiceRecordingService(logger, context);
@@ -62,141 +77,148 @@ class NoxChatViewProvider {
   setupMessageHandling() {
     this.logger.info("🦊 Setting up message handling...");
 
-    this.webviewView.webview.onDidReceiveMessage(
+    // Wrap message handler with error boundary
+    const safeMessageHandler = this.errorBoundary.wrapMessageHandler(
       async (message) => {
-        try {
-          this.logger.info("🦊 Received message from webview:", message);
+        this.logger.info("🦊 Received message from webview:", message);
 
-          switch (message.type) {
-            case "sendMessage":
-              await this.handleUserMessage(message.content);
-              break;
+        switch (message.type) {
+          case "sendMessage":
+            await this.handleUserMessage(message.content);
+            break;
 
-            case "sendStreamingMessage":
-              await this.handleStreamingMessage(message.content);
-              break;
+          case "sendStreamingMessage":
+            await this.handleStreamingMessage(message.content);
+            break;
 
-            case "streamStop":
-              await this.handleStreamStop(message.messageId);
-              break;
+          case "streamStop":
+            await this.handleStreamStop(message.messageId);
+            break;
 
-            case "streamContinue":
-              await this.handleStreamContinue(message.messageId);
-              break;
+          case "streamContinue":
+            await this.handleStreamContinue(message.messageId);
+            break;
 
-            case "clearHistory":
-              await this.clearChatHistory();
-              break;
+          case "clearHistory":
+            await this.clearChatHistory();
+            break;
 
-            case "resetAI":
-              this.resetAIState();
-              break;
+          case "resetAI":
+            this.resetAIState();
+            break;
 
-            case "ready":
-              this.logger.info("🦊 [EXTENSION] Webview ready message received");
-              await this.handleWebviewReady();
-              break;
+          case "ready":
+            this.logger.info("🦊 [EXTENSION] Webview ready message received");
+            await this.handleWebviewReady();
+            break;
 
-            case "openSettings":
-              await vscode.commands.executeCommand("nox.settings");
-              break;
+          case "openSettings":
+            await vscode.commands.executeCommand("nox.settings");
+            break;
 
-            case "changeProvider":
-              await this.handleProviderChange(message.provider);
-              break;
+          case "changeProvider":
+            await this.handleProviderChange(message.provider);
+            break;
 
-            case "changeModel":
-              await this.handleModelChange(message.model);
-              break;
+          case "changeModel":
+            await this.handleModelChange(message.model);
+            break;
 
-            case "getProviderStatus":
-              this.logger.info("🦊 Handling getProviderStatus request");
-              await this.sendProviderStatus();
-              break;
+          case "getProviderStatus":
+            this.logger.info("🦊 Handling getProviderStatus request");
+            await this.sendProviderStatus();
+            break;
 
-            case "confirmDelete":
-              // Send confirmation request to webview
-              this.sendMessageToWebview({
-                type: "confirmDelete",
-                messageId: message.messageId,
-              });
-              break;
+          case "confirmDelete":
+            // Send confirmation request to webview
+            this.sendMessageToWebview({
+              type: "confirmDelete",
+              messageId: message.messageId,
+            });
+            break;
 
-            case "deleteMessage":
-              await this.handleDeleteMessage(message.messageId);
-              break;
+          case "deleteMessage":
+            await this.handleDeleteMessage(message.messageId);
+            break;
 
-            case "regenerateMessage":
-              await this.handleRegenerateMessage(message.messageId);
-              break;
+          case "regenerateMessage":
+            await this.handleRegenerateMessage(message.messageId);
+            break;
 
-            case "clearChat":
-              this.clearChatHistory();
-              break;
+          case "clearChat":
+            this.clearChatHistory();
+            break;
 
-            case "openUrl":
-              if (message.url) {
-                await vscode.env.openExternal(vscode.Uri.parse(message.url));
-              }
-              break;
+          case "openUrl":
+            if (message.url) {
+              await vscode.env.openExternal(vscode.Uri.parse(message.url));
+            }
+            break;
 
-            case "providerSectionToggled":
-              // Update the toggle button icon based on collapsed state
-              await this.updateToggleButtonIcon(message.collapsed);
-              break;
+          case "providerSectionToggled":
+            // Update the toggle button icon based on collapsed state
+            await this.updateToggleButtonIcon(message.collapsed);
+            break;
 
-            case "startVoiceRecording":
-              // Start simple voice recording via extension backend
-              this.logger.info(
-                "🎤 Starting voice recording via extension backend"
-              );
-              await this.startVoiceRecording();
-              break;
+          case "startVoiceRecording":
+            // Start simple voice recording via extension backend
+            this.logger.info(
+              "🎤 Starting voice recording via extension backend"
+            );
+            await this.startVoiceRecording();
+            break;
 
-            case "stopVoiceRecording":
-              // Stop voice recording via extension backend (from mic button toggle)
-              this.logger.info(
-                "🎤 Stopping voice recording via mic button toggle"
-              );
-              await this.stopVoiceRecording();
-              break;
+          case "stopVoiceRecording":
+            // Stop voice recording via extension backend (from mic button toggle)
+            this.logger.info(
+              "🎤 Stopping voice recording via mic button toggle"
+            );
+            await this.stopVoiceRecording();
+            break;
 
-            case "getVoiceStatus":
-              // Send current voice status to webview
-              await this.sendVoiceStatus();
-              break;
+          case "getVoiceStatus":
+            // Send current voice status to webview
+            await this.sendVoiceStatus();
+            break;
 
-            case "injectCSS":
-              // Handle CSS injection for Aurora theme animations
-              this.logger.info(
-                `🎨 Injecting CSS for theme: ${message.theme?.name}`
-              );
-              this.sendMessageToWebview({
-                type: "injectCSS",
-                script: message.script,
-                theme: message.theme,
-              });
-              break;
+          case "injectCSS":
+            // Handle CSS injection for Aurora theme animations
+            this.logger.info(
+              `🎨 Injecting CSS for theme: ${message.theme?.name}`
+            );
+            this.sendMessageToWebview({
+              type: "injectCSS",
+              script: message.script,
+              theme: message.theme,
+            });
+            break;
 
-            case "themeChanged":
-              // Handle theme change notifications
-              this.logger.info(
-                `🎨 Theme changed notification: ${message.theme?.name}`
-              );
-              this.sendMessageToWebview({
-                type: "themeChanged",
-                theme: message.theme,
-              });
-              break;
+          case "themeChanged":
+            // Handle theme change notifications
+            this.logger.info(
+              `🎨 Theme changed notification: ${message.theme?.name}`
+            );
+            this.sendMessageToWebview({
+              type: "themeChanged",
+              theme: message.theme,
+            });
+            break;
 
-            default:
-              this.logger.warn(`Unknown message type: ${message.type}`);
-          }
-        } catch (error) {
-          this.logger.error("Error handling webview message:", error);
-          this.sendErrorToWebview(error.message);
+          default:
+            this.logger.warn(`Unknown message type: ${message.type}`);
         }
       },
+      // Error callback - send user-friendly error to webview
+      (error, message) => {
+        this.sendErrorToWebview(
+          `Failed to handle message '${message?.type}': ${error.message}`
+        );
+      }
+    );
+
+    // Register the wrapped handler
+    this.webviewView.webview.onDidReceiveMessage(
+      safeMessageHandler,
       undefined,
       this.disposables
     );
@@ -231,6 +253,16 @@ class NoxChatViewProvider {
 
       this.chatHistory.push(userMessageObj);
       this.saveChatHistory();
+
+      // Phase 2A: Add user message to NOX context builder for conversation memory
+      this.agentController.noxContextBuilder.addChatMessage(
+        "user",
+        userMessage,
+        {
+          activeFile:
+            this.agentController.noxContextBuilder.getActiveFileContext()?.path,
+        }
+      );
 
       // Send user message to webview
       this.sendMessageToWebview({
@@ -270,6 +302,16 @@ class NoxChatViewProvider {
 
       this.chatHistory.push(aiMessageObj);
       this.saveChatHistory();
+
+      // Phase 2A: Add AI response to NOX context builder for conversation memory
+      this.agentController.noxContextBuilder.addChatMessage(
+        "assistant",
+        aiResponse.content,
+        {
+          activeFile:
+            this.agentController.noxContextBuilder.getActiveFileContext()?.path,
+        }
+      );
 
       // Send AI response to webview
       this.sendMessageToWebview({
@@ -330,200 +372,248 @@ class NoxChatViewProvider {
       return;
     }
 
-    // Generate unique message ID for streaming (declare outside try block)
-    const streamingMessageId = (Date.now() + 1).toString();
+    // 🔧 FIX: Declare streamingMessageId at top level so it's accessible in catch/cleanup blocks
+    let streamingMessageId;
 
-    try {
-      this.isAIResponding = true;
-
-      // Add user message to history
-      const userMessageObj = {
-        id: Date.now().toString(),
-        type: "user",
-        content: userMessage,
-        timestamp: new Date().toISOString(),
-      };
-
-      this.chatHistory.push(userMessageObj);
-      this.saveChatHistory();
-
-      // Send user message to webview
-      this.sendMessageToWebview({
-        type: "userMessage",
-        message: userMessageObj,
-      });
-
-      // Create abort controller for this stream
-      const abortController = new AbortController();
-
-      // 🔍 PHASE 1 DIAGNOSTICS: Track AbortController object identity
-      const abortControllerID = `AC_${Date.now()}_${Math.random()
-        .toString(36)
-        .substr(2, 9)}`;
-      abortController._debugID = abortControllerID;
-      console.log(
-        `🔍 BACKEND: Created AbortController for ${streamingMessageId} with ID: ${abortControllerID}`
-      );
-      console.log(
-        `🔍 BACKEND: AbortController object reference: ${abortController.toString()}`
-      );
-      console.log(
-        `🔍 BACKEND: Initial signal.aborted state: ${abortController.signal.aborted}`
-      );
-
-      this.activeStreams.set(streamingMessageId, abortController);
-
-      // Start streaming UI
-      this.sendMessageToWebview({
-        type: "streamStart",
-        messageId: streamingMessageId,
-      });
-
-      // Set up streaming callbacks
-      const onChunk = (chunkData) => {
-        this.sendMessageToWebview({
-          type: "streamChunk",
-          messageId: chunkData.messageId,
-          chunk: chunkData.chunk,
-          tokens: chunkData.tokens,
-          isComplete: chunkData.isComplete,
-        });
-      };
-
-      const onComplete = async (finalMessage) => {
-        // Add final message to history
-        this.chatHistory.push(finalMessage);
-        this.saveChatHistory();
-
-        // Send completion to webview
-        this.sendMessageToWebview({
-          type: "streamComplete",
-          messageId: streamingMessageId,
-          finalMessage: finalMessage,
-        });
-
-        // 🦊 NOX: Check for Git operations after streaming completes
+    // Wrap streaming operation with error boundary
+    await this.errorBoundary.wrapStreaming(
+      async () => {
         try {
-          const gitOperations = this.agentController.detectGitOperations(
+          this.isAIResponding = true;
+
+          // Add user message to history
+          const userMessageObj = {
+            id: Date.now().toString(),
+            type: "user",
+            content: userMessage,
+            timestamp: new Date().toISOString(),
+          };
+
+          this.chatHistory.push(userMessageObj);
+          this.saveChatHistory();
+
+          // 🔧 FIX: Generate streaming message ID AFTER user message to ensure unique IDs
+          // Add small delay to guarantee different timestamp
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          streamingMessageId = Date.now().toString();
+
+          // Phase 2A: Add user message to NOX context builder for conversation memory
+          this.agentController.noxContextBuilder.addChatMessage(
+            "user",
             userMessage,
-            finalMessage.content || ""
-          );
-
-          for (const gitOp of gitOperations) {
-            if (gitOp.autoExecute) {
-              try {
-                this.logger.info(
-                  `🦊 Auto-executing Git operation: ${gitOp.type}`
-                );
-                const gitResult = await this.agentController.executeCapability(
-                  gitOp,
-                  noxContext
-                );
-
-                // Send Git result to webview
-                this.sendMessageToWebview({
-                  type: "gitOperationResult",
-                  messageId: streamingMessageId,
-                  operation: gitOp,
-                  result: gitResult,
-                });
-              } catch (error) {
-                this.logger.error(
-                  `Failed to execute Git operation ${gitOp.type}:`,
-                  error
-                );
-                this.sendMessageToWebview({
-                  type: "gitOperationError",
-                  messageId: streamingMessageId,
-                  operation: gitOp,
-                  error: error.message,
-                });
-              }
+            {
+              activeFile:
+                this.agentController.noxContextBuilder.getActiveFileContext()
+                  ?.path,
             }
-          }
-        } catch (error) {
-          this.logger.error("Error processing Git operations:", error);
-        }
-
-        // 🔧 FIX: Don't immediately clean up AbortController - keep it for potential stop requests
-        // Only clean up after a delay to allow stop button to work even after completion
-        setTimeout(() => {
-          this.activeStreams.delete(streamingMessageId);
-          console.log(
-            `🔧 FIX: Delayed cleanup of AbortController for ${streamingMessageId}`
           );
-        }, 5000); // 5 second delay
 
-        this.isAIResponding = false;
+          // Send user message to webview
+          this.sendMessageToWebview({
+            type: "userMessage",
+            message: userMessageObj,
+          });
 
+          // Create abort controller for this stream
+          const abortController = new AbortController();
+
+          // 🔍 PHASE 1 DIAGNOSTICS: Track AbortController object identity (debug mode only)
+          const abortControllerID = `AC_${Date.now()}_${Math.random()
+            .toString(36)
+            .substr(2, 9)}`;
+          abortController._debugID = abortControllerID;
+
+          if (this.agentController?.aiClient?.debugMode) {
+            console.log(
+              `🔍 BACKEND: Created AbortController for ${streamingMessageId} with ID: ${abortControllerID}`
+            );
+            console.log(
+              `🔍 BACKEND: AbortController object reference: ${abortController.toString()}`
+            );
+            console.log(
+              `🔍 BACKEND: Initial signal.aborted state: ${abortController.signal.aborted}`
+            );
+          }
+
+          this.activeStreams.set(streamingMessageId, abortController);
+
+          // Start streaming UI
+          this.sendMessageToWebview({
+            type: "streamStart",
+            messageId: streamingMessageId,
+          });
+
+          // Set up streaming callbacks
+          const onChunk = (chunkData) => {
+            this.sendMessageToWebview({
+              type: "streamChunk",
+              messageId: chunkData.messageId,
+              chunk: chunkData.chunk,
+              tokens: chunkData.tokens,
+              isComplete: chunkData.isComplete,
+            });
+          };
+
+          const onComplete = async (finalMessage) => {
+            // Add final message to history
+            this.chatHistory.push(finalMessage);
+            this.saveChatHistory();
+
+            // Phase 2A: Add AI response to NOX context builder for conversation memory
+            this.agentController.noxContextBuilder.addChatMessage(
+              "assistant",
+              finalMessage.content,
+              {
+                activeFile:
+                  this.agentController.noxContextBuilder.getActiveFileContext()
+                    ?.path,
+              }
+            );
+
+            // Send completion to webview
+            this.sendMessageToWebview({
+              type: "streamComplete",
+              messageId: streamingMessageId,
+              finalMessage: finalMessage,
+            });
+
+            // 🦊 NOX: Check for Git operations after streaming completes
+            try {
+              const gitOperations = this.agentController.detectGitOperations(
+                userMessage,
+                finalMessage.content || ""
+              );
+
+              for (const gitOp of gitOperations) {
+                if (gitOp.autoExecute) {
+                  try {
+                    this.logger.info(
+                      `🦊 Auto-executing Git operation: ${gitOp.type}`
+                    );
+                    const gitResult =
+                      await this.agentController.executeCapability(
+                        gitOp,
+                        noxContext
+                      );
+
+                    // Send Git result to webview
+                    this.sendMessageToWebview({
+                      type: "gitOperationResult",
+                      messageId: streamingMessageId,
+                      operation: gitOp,
+                      result: gitResult,
+                    });
+                  } catch (error) {
+                    this.logger.error(
+                      `Failed to execute Git operation ${gitOp.type}:`,
+                      error
+                    );
+                    this.sendMessageToWebview({
+                      type: "gitOperationError",
+                      messageId: streamingMessageId,
+                      operation: gitOp,
+                      error: error.message,
+                    });
+                  }
+                }
+              }
+            } catch (error) {
+              this.logger.error("Error processing Git operations:", error);
+            }
+
+            // 🔧 FIX: Don't immediately clean up AbortController - keep it for potential stop requests
+            // Only clean up after a delay to allow stop button to work even after completion
+            setTimeout(() => {
+              this.activeStreams.delete(streamingMessageId);
+              console.log(
+                `🔧 FIX: Delayed cleanup of AbortController for ${streamingMessageId}`
+              );
+            }, 5000); // 5 second delay
+
+            this.isAIResponding = false;
+
+            this.logger.info(
+              `🌊 Streaming chat exchange completed (${
+                finalMessage.tokens || 0
+              } tokens)`
+            );
+          };
+
+          // 🔍 PHASE 1 DIAGNOSTICS: Pre-call verification (debug mode only)
+          if (this.agentController?.aiClient?.debugMode) {
+            console.log(
+              `🔍 BACKEND: About to call sendStreamingRequest for ${streamingMessageId}`
+            );
+            console.log(
+              `🔍 BACKEND: Passing AbortController ID: ${
+                abortController._debugID || "NO_ID"
+              }`
+            );
+            console.log(
+              `🔍 BACKEND: Passing AbortController reference: ${abortController.toString()}`
+            );
+            console.log(
+              `🔍 BACKEND: Signal state before call: ${abortController.signal.aborted}`
+            );
+          }
+
+          // Get streaming AI response using NOX consciousness system
+          // Build NOX context and prompts
+          const noxContext = await this.agentController.buildNoxContext(
+            "chat",
+            {
+              message: userMessage,
+            }
+          );
+          const systemPrompt = this.agentController.buildNoxSystemPrompt(
+            "chat",
+            noxContext
+          );
+          const taskPrompt = this.agentController.buildNoxTaskPrompt(
+            "chat",
+            { message: userMessage },
+            noxContext
+          );
+
+          // Execute with NOX consciousness
+          await this.agentController.executeNoxStreamingTask(
+            systemPrompt,
+            taskPrompt,
+            {
+              maxTokens: 4000,
+              messageId: streamingMessageId,
+              message: userMessage, // 🔧 FIX: Pass raw user message for chat history
+            },
+            onChunk,
+            onComplete,
+            abortController
+          );
+        } catch (error) {
+          this.logger.error("Error in streaming chat exchange:", error);
+
+          // Send streaming error
+          this.sendMessageToWebview({
+            type: "streamError",
+            messageId: streamingMessageId,
+            error: error.message,
+          });
+
+          this.sendErrorToWebview(error.message);
+          throw error; // Re-throw for error boundary cleanup
+        } finally {
+          this.isAIResponding = false;
+        }
+      },
+      // Cleanup function - always runs on error
+      async () => {
         this.logger.info(
-          `🌊 Streaming chat exchange completed (${
-            finalMessage.tokens || 0
-          } tokens)`
+          `🧹 Cleaning up streaming resources for ${streamingMessageId}`
         );
-      };
-
-      // 🔍 PHASE 1 DIAGNOSTICS: Pre-call verification
-      console.log(
-        `🔍 BACKEND: About to call sendStreamingRequest for ${streamingMessageId}`
-      );
-      console.log(
-        `🔍 BACKEND: Passing AbortController ID: ${
-          abortController._debugID || "NO_ID"
-        }`
-      );
-      console.log(
-        `🔍 BACKEND: Passing AbortController reference: ${abortController.toString()}`
-      );
-      console.log(
-        `🔍 BACKEND: Signal state before call: ${abortController.signal.aborted}`
-      );
-
-      // Get streaming AI response using NOX consciousness system
-      // Build NOX context and prompts
-      const noxContext = await this.agentController.buildNoxContext("chat", {
-        message: userMessage,
-      });
-      const systemPrompt = this.agentController.buildNoxSystemPrompt(
-        "chat",
-        noxContext
-      );
-      const taskPrompt = this.agentController.buildNoxTaskPrompt(
-        "chat",
-        { message: userMessage },
-        noxContext
-      );
-
-      // Execute with NOX consciousness
-      await this.agentController.executeNoxStreamingTask(
-        systemPrompt,
-        taskPrompt,
-        {
-          maxTokens: 4000,
-          messageId: streamingMessageId,
-        },
-        onChunk,
-        onComplete,
-        abortController
-      );
-    } catch (error) {
-      this.logger.error("Error in streaming chat exchange:", error);
-
-      // Clean up active stream
-      this.activeStreams.delete(streamingMessageId);
-      this.isAIResponding = false; // CRITICAL: Reset the flag on error
-
-      // Send streaming error
-      this.sendMessageToWebview({
-        type: "streamError",
-        messageId: streamingMessageId,
-        error: error.message,
-      });
-
-      this.sendErrorToWebview(error.message);
-    } finally {
-      this.isAIResponding = false;
-    }
+        this.activeStreams.delete(streamingMessageId);
+        this.isAIResponding = false;
+      },
+      `Streaming message ${streamingMessageId}`
+    );
   }
 
   /**
@@ -547,38 +637,42 @@ class NoxChatViewProvider {
       const abortController = this.activeStreams.get(messageId);
 
       if (abortController) {
-        console.log(
-          `🛑 BACKEND: Found AbortController for ${messageId}, calling abort()`
-        );
+        if (this.agentController?.aiClient?.debugMode) {
+          console.log(
+            `🛑 BACKEND: Found AbortController for ${messageId}, calling abort()`
+          );
 
-        // 🔍 PHASE 1 DIAGNOSTICS: Enhanced abort tracking
-        console.log(
-          `🔍 BACKEND: AbortController ID: ${
-            abortController._debugID || "NO_ID"
-          }`
-        );
-        console.log(
-          `🔍 BACKEND: AbortController object reference: ${abortController.toString()}`
-        );
-        console.log(
-          `🔍 BACKEND: Signal state BEFORE abort: ${abortController.signal.aborted}`
-        );
-        console.log(
-          `🔍 BACKEND: Timestamp before abort: ${new Date().toISOString()}`
-        );
+          // 🔍 PHASE 1 DIAGNOSTICS: Enhanced abort tracking
+          console.log(
+            `🔍 BACKEND: AbortController ID: ${
+              abortController._debugID || "NO_ID"
+            }`
+          );
+          console.log(
+            `🔍 BACKEND: AbortController object reference: ${abortController.toString()}`
+          );
+          console.log(
+            `🔍 BACKEND: Signal state BEFORE abort: ${abortController.signal.aborted}`
+          );
+          console.log(
+            `🔍 BACKEND: Timestamp before abort: ${new Date().toISOString()}`
+          );
+        }
 
         // Abort the request
         abortController.abort();
 
-        console.log(
-          `🔍 BACKEND: Signal state AFTER abort: ${abortController.signal.aborted}`
-        );
-        console.log(
-          `🔍 BACKEND: Timestamp after abort: ${new Date().toISOString()}`
-        );
-        console.log(
-          `🛑 BACKEND: AbortController.signal.aborted = ${abortController.signal.aborted}`
-        );
+        if (this.agentController?.aiClient?.debugMode) {
+          console.log(
+            `🔍 BACKEND: Signal state AFTER abort: ${abortController.signal.aborted}`
+          );
+          console.log(
+            `🔍 BACKEND: Timestamp after abort: ${new Date().toISOString()}`
+          );
+          console.log(
+            `🛑 BACKEND: AbortController.signal.aborted = ${abortController.signal.aborted}`
+          );
+        }
 
         // Clean up
         this.activeStreams.delete(messageId);
@@ -721,22 +815,28 @@ class NoxChatViewProvider {
 
   /**
    * 🔄 Reset AI state (emergency fix for stuck state)
+   * Enhanced with error boundary integration
    */
   resetAIState() {
     this.logger.warn("🔄 Resetting AI state - clearing all active streams");
 
-    // Clear all active streams
+    // Clear all active streams with error boundary protection
     for (const [messageId, abortController] of this.activeStreams) {
-      try {
-        abortController.abort();
-        this.logger.info(`⏹️ Aborted stuck stream: ${messageId}`);
-      } catch (error) {
-        this.logger.error(`Error aborting stream ${messageId}:`, error);
-      }
+      this.errorBoundary.safeDOM(
+        () => {
+          abortController.abort();
+          this.logger.info(`⏹️ Aborted stuck stream: ${messageId}`);
+        },
+        null,
+        `Abort stream ${messageId}`
+      );
     }
 
     this.activeStreams.clear();
     this.isAIResponding = false;
+
+    // Clear error boundary history to start fresh
+    this.errorBoundary.clearHistory();
 
     this.sendMessageToWebview({
       type: "info",
@@ -744,6 +844,35 @@ class NoxChatViewProvider {
     });
 
     this.logger.info("🔄 AI state reset completed");
+  }
+
+  /**
+   * 🛟 Automatic error recovery mechanism
+   * Triggers state reset if too many errors occur
+   */
+  checkAndRecoverFromErrors() {
+    const stats = this.errorBoundary.getStats();
+
+    // If we have more than 5 errors in recent history, trigger auto-recovery
+    if (stats.totalErrors > 5) {
+      this.logger.warn(
+        `🛟 Auto-recovery triggered: ${stats.totalErrors} errors detected`
+      );
+
+      // Reset AI state
+      this.resetAIState();
+
+      // Notify user
+      this.sendMessageToWebview({
+        type: "warning",
+        message:
+          "Multiple errors detected. System state has been automatically reset.",
+      });
+
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -893,6 +1022,21 @@ class NoxChatViewProvider {
       // Replace old message with new one
       this.chatHistory[messageIndex] = newMessage;
       await this.saveChatHistory();
+
+      // Phase 2A: Rebuild NOX context from updated chat history
+      // Clear and rebuild to ensure consistency
+      this.agentController.noxContextBuilder.clearChatHistory();
+      for (const msg of this.chatHistory) {
+        this.agentController.noxContextBuilder.addChatMessage(
+          msg.type === "user" ? "user" : "assistant",
+          msg.content,
+          {
+            activeFile:
+              this.agentController.noxContextBuilder.getActiveFileContext()
+                ?.path,
+          }
+        );
+      }
 
       // Notify webview that message was regenerated
       this.sendMessageToWebview({
@@ -1054,6 +1198,25 @@ class NoxChatViewProvider {
       );
       this.chatHistory = Array.isArray(savedHistory) ? savedHistory : [];
 
+      // 🔧 FIX: Sync loaded history to NOX context builder for chat context awareness
+      // Clear existing history first to avoid duplicates
+      this.agentController.noxContextBuilder.clearChatHistory();
+
+      // Add all loaded messages to NOX context builder
+      for (const msg of this.chatHistory) {
+        this.agentController.noxContextBuilder.addChatMessage(
+          msg.type === "user" ? "user" : "assistant",
+          msg.content,
+          {
+            activeFile: msg.activeFile || null,
+          }
+        );
+      }
+
+      this.logger.info(
+        `📖 Loaded ${this.chatHistory.length} messages from workspace state and synced to NOX context builder`
+      );
+
       if (this.chatHistory.length > 0) {
         this.sendMessageToWebview({
           type: "loadHistory",
@@ -1124,36 +1287,9 @@ class NoxChatViewProvider {
       // Generate CSS variables for the theme
       const cssVariables = this.themeService.generateCSSVariables(currentTheme);
 
-      // Create CSS injection script for chat sidebar
-      // This script applies theme variables with multiple layers of protection
-      const cssInjectionScript = `
-        (function() {
-          const root = document.documentElement;
-          const variables = ${JSON.stringify(cssVariables)};
-
-          // Apply all CSS variables with !important to override bundled defaults
-          Object.entries(variables).forEach(([property, value]) => {
-            root.style.setProperty(property, value, 'important');
-          });
-
-          // Log theme application for debugging
-          console.log('🎨 Chat sidebar theme applied:', '${currentTheme.name}');
-          console.log('🎨 Variables:', variables);
-
-          // Trigger Aurora animation refresh
-          const auroraElements = document.querySelectorAll('.aurora-bg, .progress-fill');
-          auroraElements.forEach(el => {
-            el.style.animation = 'none';
-            el.offsetHeight; // Trigger reflow
-            el.style.animation = null;
-          });
-        })();
-      `;
-
-      // Send CSS injection to chat sidebar webview
+      // ✅ SECURITY FIX: Send CSS variables directly instead of executable script
       this.sendMessageToWebview({
         type: "injectCSS",
-        script: cssInjectionScript,
         theme: {
           id: currentTheme.id,
           name: currentTheme.name,
@@ -1170,7 +1306,6 @@ class NoxChatViewProvider {
       setTimeout(() => {
         this.sendMessageToWebview({
           type: "injectCSS",
-          script: cssInjectionScript,
           theme: {
             id: currentTheme.id,
             name: currentTheme.name,
@@ -1205,6 +1340,32 @@ class NoxChatViewProvider {
     this.webviewView.onDidDispose(() => {
       this.dispose();
     });
+  }
+
+  /**
+   * 🐛 Update debug mode
+   */
+  setDebugMode(debugMode) {
+    this.debugMode = debugMode;
+    this.logger.info(`🐛 Chat sidebar debug mode updated: ${debugMode}`);
+
+    // Reload webview HTML to inject/remove diagnostic script
+    if (this.webviewView) {
+      this.logger.info(
+        "🔄 Reloading webview HTML to apply debug mode changes..."
+      );
+      this.webviewView.webview.html = this.getWebviewContent();
+
+      // Send notification
+      setTimeout(() => {
+        this.sendMessageToWebview({
+          type: "info",
+          message: debugMode
+            ? "🐛 Debug mode enabled. Diagnostic tools are now available in the console."
+            : "🐛 Debug mode disabled. Diagnostic tools have been removed.",
+        });
+      }, 500); // Wait for webview to reload
+    }
   }
 
   /**
@@ -1349,7 +1510,8 @@ class NoxChatViewProvider {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}' ${
       this.webviewView.webview.cspSource
-    } 'unsafe-eval'; font-src https:; media-src * data: blob:;">
+    }; font-src https:; media-src * data: blob:;">
+        <!-- ✅ SECURITY FIX: Removed 'unsafe-eval' from CSP after eliminating all eval() usage -->
         <meta http-equiv="Permissions-Policy" content="microphone=*, camera=*, geolocation=*">
         <title>🦊 Nox Chat</title>
 
@@ -1497,6 +1659,8 @@ class NoxChatViewProvider {
         <script nonce="${nonce}">
 ${this.getModalSystemScript()}
         </script>
+
+
     </body>
     </html>`;
   }

@@ -278,7 +278,8 @@ class NoxExtension {
         this.context,
         this.agentController,
         this.logger,
-        this.themeService
+        this.themeService,
+        this.debugMode
       );
 
       // Register the webview view provider
@@ -470,6 +471,9 @@ class NoxExtension {
                   if (this.agentController && this.agentController.aiClient) {
                     this.agentController.aiClient.setDebugMode(message.value);
                   }
+                  if (this.chatSidebarProvider) {
+                    this.chatSidebarProvider.setDebugMode(message.value);
+                  }
                   this.logger.info(
                     `🐛 Debug mode ${message.value ? "enabled" : "disabled"}`
                   );
@@ -560,6 +564,9 @@ class NoxExtension {
             this.debugMode = config.get("debugMode", false);
             if (this.agentController && this.agentController.aiClient) {
               this.agentController.aiClient.setDebugMode(this.debugMode);
+            }
+            if (this.chatSidebarProvider) {
+              this.chatSidebarProvider.setDebugMode(this.debugMode);
             }
             this.logger.info(`🐛 Debug mode updated: ${this.debugMode}`);
           }
@@ -2212,10 +2219,21 @@ class NoxExtension {
                         console.log('🎨 Theme updated in settings panel:', message.themeId);
                     }
                 } else if (message.type === 'injectCSS') {
-                    // Execute CSS injection script for Aurora animations
+                    // ✅ SECURITY FIX: Apply CSS variables directly instead of eval()
                     try {
-                        eval(message.script);
-                        console.log('🎨 CSS injection successful for theme:', message.theme.name);
+                        if (message.theme?.variables) {
+                            applyCSSVariables(message.theme.variables);
+
+                            // Trigger Aurora animation refresh
+                            const auroraElements = document.querySelectorAll('.aurora-bg, .progress-fill');
+                            auroraElements.forEach(el => {
+                                el.style.animation = 'none';
+                                el.offsetHeight; // Trigger reflow
+                                el.style.animation = null;
+                            });
+
+                            console.log('🎨 CSS injection successful for theme:', message.theme.name);
+                        }
                     } catch (error) {
                         console.error('🎨 CSS injection failed:', error);
                     }

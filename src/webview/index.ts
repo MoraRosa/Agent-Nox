@@ -11,6 +11,9 @@ import './markdown-styles.css';
 import { MarkdownTester } from './markdown-test';
 import { NoxMarkdownRenderer, initializeCopyButtons } from './markdown-renderer';
 
+// Import error boundary
+import { ErrorBoundary, ErrorSeverity } from './errorBoundary';
+
 // Import types and components
 import {
   VSCodeAPI,
@@ -45,6 +48,7 @@ class NoxChatApp {
   private vscode: VSCodeAPI;
   private state: WebviewState;
   private debugMode: boolean = false;
+  private errorBoundary: ErrorBoundary;
   private elements: {
     messagesContainer?: HTMLElement;
     messageInput?: HTMLTextAreaElement;
@@ -68,6 +72,14 @@ class NoxChatApp {
     this.vscode = acquireVsCodeApi();
     // Store vscode API globally so components can access it
     (window as any).vscodeApi = this.vscode;
+
+    // Initialize error boundary
+    this.errorBoundary = new ErrorBoundary(console, {
+      enableRetry: true,
+      maxRetries: 3,
+      retryDelay: 1000
+    });
+
     this.state = this.initializeState();
     this.initialize();
   }
@@ -83,7 +95,8 @@ class NoxChatApp {
       },
       currentProvider: 'anthropic',
       currentModel: 'claude-sonnet-4-5-20250929',
-      isAIResponding: false
+      isAIResponding: false,
+      isInitialized: false // 🔧 FIX: Start as not initialized
     };
   }
 
@@ -111,6 +124,9 @@ class NoxChatApp {
   }
 
   private setupUI(): void {
+    // 🔧 DEBUG: Log UI setup start
+    console.log('🔧 [WEBVIEW] Starting UI setup...');
+
     // Get DOM elements
     this.elements.messagesContainer = document.getElementById('messagesContainer') as HTMLElement;
     this.elements.messageInput = document.getElementById('messageInput') as HTMLTextAreaElement;
@@ -120,6 +136,9 @@ class NoxChatApp {
     this.elements.sessionCost = document.getElementById('sessionCost') as HTMLElement;
     this.elements.sessionTokens = document.getElementById('sessionTokens') as HTMLElement;
     this.elements.streamingToggle = document.getElementById('streamingToggle') as HTMLInputElement;
+
+    // 🔧 FIX: Disable UI until extension is fully initialized
+    this.setUIEnabled(false);
 
     // Initialize speech recognition
     this.initializeSpeechRecognition();
@@ -133,11 +152,15 @@ class NoxChatApp {
     // Setup message handling
     this.setupMessageHandling();
 
+    // 🔧 DEBUG: Log before sending ready message
+    console.log('🔧 [WEBVIEW] About to send ready message...');
+
     // Request initial data from extension
     this.sendMessage({ type: 'ready' });
     this.sendMessage({ type: 'getVoiceStatus' });
 
-
+    // 🔧 DEBUG: Confirm ready message sent
+    console.log('✅ [WEBVIEW] Ready message sent, UI setup complete');
   }
 
   private setupEventListeners(): void {
@@ -193,6 +216,49 @@ class NoxChatApp {
     // Toggle functionality is handled via extension message in handleExtensionMessage()
   }
 
+  /**
+   * 🔧 FIX: Enable/disable UI during initialization
+   * Prevents first-interaction glitch by disabling all controls until extension is ready
+   */
+  private setUIEnabled(enabled: boolean): void {
+    // Disable/enable input controls
+    if (this.elements.messageInput) {
+      this.elements.messageInput.disabled = !enabled;
+      this.elements.messageInput.placeholder = enabled
+        ? 'Ask Nox anything...'
+        : 'Initializing Nox...';
+    }
+
+    if (this.elements.sendBtn) {
+      this.elements.sendBtn.disabled = !enabled;
+    }
+
+    if (this.elements.micBtn) {
+      this.elements.micBtn.disabled = !enabled;
+    }
+
+    // Disable/enable provider and model selects
+    const providerSelect = document.getElementById('providerSelect') as HTMLSelectElement;
+    if (providerSelect) {
+      providerSelect.disabled = !enabled;
+    }
+
+    const modelSelect = document.getElementById('modelSelect') as HTMLSelectElement;
+    if (modelSelect) {
+      modelSelect.disabled = !enabled;
+    }
+
+    // Disable/enable theme buttons
+    const themeButtons = document.querySelectorAll('.theme-btn');
+    themeButtons.forEach((btn) => {
+      (btn as HTMLButtonElement).disabled = !enabled;
+    });
+
+    if (this.debugMode) {
+      console.log(`🔧 UI ${enabled ? 'enabled' : 'disabled'}`);
+    }
+  }
+
   private toggleProviderSection(): void {
     console.log('🦊 Toggle provider section called');
     const providerControls = document.getElementById('providerControls') as HTMLElement;
@@ -224,16 +290,39 @@ class NoxChatApp {
     // Clear the messages container
     const messagesContainer = document.getElementById('messagesContainer');
     if (messagesContainer) {
-      messagesContainer.innerHTML = `
-        <div class="welcome-message">
-          <div class="fox-welcome">🦊</div>
-          <div class="welcome-text">
-            <h3>Welcome to Nox!</h3>
-            <p>Your clever AI coding fox is ready to help.</p>
-            <div class="bundled-indicator">✨ Enterprise Bundle</div>
-          </div>
-        </div>
-      `;
+      // ✅ SECURITY: Build welcome message with safe DOM methods
+      while (messagesContainer.firstChild) {
+        messagesContainer.removeChild(messagesContainer.firstChild);
+      }
+
+      const welcomeDiv = document.createElement('div');
+      welcomeDiv.className = 'welcome-message';
+
+      const foxWelcome = document.createElement('div');
+      foxWelcome.className = 'fox-welcome';
+      foxWelcome.textContent = '🦊';
+
+      const welcomeText = document.createElement('div');
+      welcomeText.className = 'welcome-text';
+
+      const h3 = document.createElement('h3');
+      h3.textContent = 'Welcome to Nox!';
+
+      const p = document.createElement('p');
+      p.textContent = 'Your clever AI coding fox is ready to help.';
+
+      const indicator = document.createElement('div');
+      indicator.className = 'bundled-indicator';
+      indicator.textContent = '✨ Enterprise Bundle';
+
+      welcomeText.appendChild(h3);
+      welcomeText.appendChild(p);
+      welcomeText.appendChild(indicator);
+
+      welcomeDiv.appendChild(foxWelcome);
+      welcomeDiv.appendChild(welcomeText);
+
+      messagesContainer.appendChild(welcomeDiv);
     }
 
     // Reset session stats
@@ -244,12 +333,36 @@ class NoxChatApp {
   }
 
   private setupMessageHandling(): void {
-    window.addEventListener('message', (event) => {
-      if (this.debugMode) {
-        console.log('🦊 [WEBVIEW] Received:', event.data?.type);
+    // 🔧 DEBUG: Log when message handler is being set up
+    console.log('🔧 [WEBVIEW] Setting up message handler...');
+
+    // Wrap message handler with error boundary
+    const safeMessageHandler = this.errorBoundary.wrapMessageHandler(
+      async (message: any) => {
+        // 🔧 DEBUG: Log received messages only in debug mode (except critical errors)
+        if (this.debugMode) {
+          console.log('🦊 [WEBVIEW] Received:', message?.type, message?.messageId || '');
+        }
+
+        if (this.debugMode) {
+          console.log('🦊 [WEBVIEW] Full message:', message);
+        }
+        this.handleExtensionMessage(message);
+      },
+      (error: Error, message: any) => {
+        // Show user-friendly error in UI
+        this.showError(
+          `Failed to handle message '${message?.type}': ${error.message}`
+        );
       }
-      this.handleExtensionMessage(event.data);
+    );
+
+    window.addEventListener('message', (event) => {
+      safeMessageHandler(event.data);
     });
+
+    // 🔧 DEBUG: Confirm message handler is registered
+    console.log('✅ [WEBVIEW] Message handler registered successfully');
   }
 
   private sendMessage(message: BaseMessage): void {
@@ -261,11 +374,36 @@ class NoxChatApp {
 
   /**
    * 🎨 Handle CSS injection for Aurora theme animations
+   * ✅ SECURITY FIX: Replaced eval() with direct CSS variable application
    */
   private handleCSSInjection(message: any): void {
     try {
-      // Execute the CSS injection script with !important flags
-      eval(message.script);
+      // Validate message structure
+      if (!message.theme?.variables || typeof message.theme.variables !== 'object') {
+        console.error('🎨 Invalid CSS variables in message');
+        return;
+      }
+
+      const root = document.documentElement;
+      const variables = message.theme.variables;
+
+      // Apply all CSS variables with validation and !important flag
+      Object.entries(variables).forEach(([property, value]) => {
+        if (this.isValidCSSVariable(property, value as string)) {
+          root.style.setProperty(property, value as string, 'important');
+        } else if (this.debugMode) {
+          console.warn(`🎨 Skipped invalid CSS variable: ${property}`);
+        }
+      });
+
+      // Trigger Aurora animation refresh
+      const auroraElements = document.querySelectorAll('.aurora-bg, .progress-fill');
+      auroraElements.forEach(el => {
+        const element = el as HTMLElement;
+        element.style.animation = 'none';
+        element.offsetHeight; // Trigger reflow
+        element.style.animation = '';
+      });
 
       if (this.debugMode) {
         console.log('🎨 Theme applied:', message.theme?.name);
@@ -273,6 +411,32 @@ class NoxChatApp {
     } catch (error) {
       console.error('🎨 Theme CSS injection failed:', error);
     }
+  }
+
+  /**
+   * 🛡️ Validate CSS variable name and value for security
+   * ✅ SECURITY: Prevents injection of malicious CSS
+   */
+  private isValidCSSVariable(key: string, value: string): boolean {
+    // Only allow CSS custom properties (--*)
+    if (!key.startsWith('--')) {
+      return false;
+    }
+
+    // Validate value doesn't contain dangerous patterns
+    const dangerousPatterns = [
+      'javascript:',
+      'data:text/html',
+      '<script',
+      'expression(',
+      'import',
+      'eval(',
+      'url(javascript:',
+      'url(data:text/html'
+    ];
+
+    const lowerValue = value.toLowerCase();
+    return !dangerousPatterns.some(pattern => lowerValue.includes(pattern));
   }
 
   /**
@@ -311,7 +475,11 @@ class NoxChatApp {
   private sendUserMessage(): void {
     const message = this.elements.messageInput?.value.trim();
 
-    if (!message || this.state.isAIResponding) {
+    // 🔧 FIX: Prevent sending if not initialized or AI is responding
+    if (!message || this.state.isAIResponding || !this.state.isInitialized) {
+      if (!this.state.isInitialized && this.debugMode) {
+        console.log('🔧 Message blocked - extension not initialized yet');
+      }
       return;
     }
 
@@ -360,6 +528,7 @@ class NoxChatApp {
         break;
 
       case 'error':
+        console.error('🚨 [ERROR] Backend error:', message.message);
         this.showError(message.message);
         this.state.isAIResponding = false;
         break;
@@ -452,6 +621,11 @@ class NoxChatApp {
         // Update debug mode from preferences
         this.debugMode = message.debugMode;
         console.log('🐛 Debug mode updated:', this.debugMode);
+        break;
+
+      case 'info':
+        // Info message from extension (e.g., debug mode change notification)
+        console.log('ℹ️', message.message);
         break;
 
       default:
@@ -610,12 +784,18 @@ class NoxChatApp {
   private addMessage(message: ChatMessage): void {
     if (!this.elements.messagesContainer) return;
 
-    const messageEl = MessageComponent.create({ message });
-    this.elements.messagesContainer.appendChild(messageEl);
-    this.scrollToBottom();
+    this.errorBoundary.safeDOM(
+      () => {
+        const messageEl = MessageComponent.create({ message });
+        this.elements.messagesContainer!.appendChild(messageEl);
+        this.scrollToBottom();
 
-    // Update state
-    this.state.chatHistory.push(message);
+        // Update state
+        this.state.chatHistory.push(message);
+      },
+      null,
+      'Add message to DOM'
+    );
   }
 
   private showThinking(show: boolean): void {
@@ -633,19 +813,25 @@ class NoxChatApp {
   private showError(error: string): void {
     if (!this.elements.messagesContainer) return;
 
-    const errorEl = document.createElement('div');
-    errorEl.className = 'error-message';
-    errorEl.textContent = error;
+    this.errorBoundary.safeDOM(
+      () => {
+        const errorEl = document.createElement('div');
+        errorEl.className = 'error-message';
+        errorEl.textContent = error;
 
-    this.elements.messagesContainer.appendChild(errorEl);
-    this.scrollToBottom();
+        this.elements.messagesContainer!.appendChild(errorEl);
+        this.scrollToBottom();
 
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-      if (errorEl.parentNode) {
-        errorEl.parentNode.removeChild(errorEl);
-      }
-    }, 5000);
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+          if (errorEl.parentNode) {
+            errorEl.parentNode.removeChild(errorEl);
+          }
+        }, 5000);
+      },
+      null,
+      'Show error message'
+    );
   }
 
   private clearMessages(): void {
@@ -653,7 +839,12 @@ class NoxChatApp {
 
     // Keep welcome message, remove others
     const welcomeMsg = this.elements.messagesContainer.querySelector('.welcome-message');
-    this.elements.messagesContainer.innerHTML = '';
+
+    // ✅ SECURITY: Clear container safely
+    while (this.elements.messagesContainer.firstChild) {
+      this.elements.messagesContainer.removeChild(this.elements.messagesContainer.firstChild);
+    }
+
     if (welcomeMsg) {
       this.elements.messagesContainer.appendChild(welcomeMsg);
     }
@@ -715,6 +906,15 @@ class NoxChatApp {
         statusText.textContent = 'No API Key';
       }
     }
+
+    // 🔧 FIX: Enable UI after first provider status is received (initialization complete)
+    if (!this.state.isInitialized) {
+      this.state.isInitialized = true;
+      this.setUIEnabled(true);
+      if (this.debugMode) {
+        console.log('🔧 Extension initialized - UI enabled');
+      }
+    }
   }
 
   private populateProviderDropdown(providers: any, currentProvider: string): void {
@@ -724,8 +924,10 @@ class NoxChatApp {
       return;
     }
 
-    // Clear existing options
-    providerSelect.innerHTML = '';
+    // ✅ SECURITY: Clear existing options safely
+    while (providerSelect.firstChild) {
+      providerSelect.removeChild(providerSelect.firstChild);
+    }
 
     // Add options for each provider
     Object.entries(providers).forEach(([providerId, providerData]: [string, any]) => {
@@ -750,12 +952,22 @@ class NoxChatApp {
     // Check if provider exists and has models
     if (!provider || !provider.models || !Array.isArray(provider.models)) {
       console.warn('🦊 Invalid provider data for model dropdown:', provider);
-      modelSelect.innerHTML = '<option value="">No models available</option>';
+
+      // ✅ SECURITY: Use safe DOM methods instead of innerHTML
+      while (modelSelect.firstChild) {
+        modelSelect.removeChild(modelSelect.firstChild);
+      }
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'No models available';
+      modelSelect.appendChild(option);
       return;
     }
 
-    // Clear existing options
-    modelSelect.innerHTML = '';
+    // ✅ SECURITY: Clear existing options safely
+    while (modelSelect.firstChild) {
+      modelSelect.removeChild(modelSelect.firstChild);
+    }
 
     // Add model options
     provider.models.forEach((model: string) => {
@@ -826,13 +1038,32 @@ class NoxChatApp {
       ? (this.state.sessionStats.totalCost / this.state.sessionStats.messageCount).toFixed(4)
       : '0.0000';
 
-    summaryEl.innerHTML = `
-      <span class="session-messages">${this.state.sessionStats.messageCount} messages</span>
-      <span>•</span>
-      <span>${sessionDuration}</span>
-      <span>•</span>
-      <span>$${avgCostPerMessage}/msg avg</span>
-    `;
+    // ✅ SECURITY: Build session summary with safe DOM methods
+    while (summaryEl.firstChild) {
+      summaryEl.removeChild(summaryEl.firstChild);
+    }
+
+    const messagesSpan = document.createElement('span');
+    messagesSpan.className = 'session-messages';
+    messagesSpan.textContent = `${this.state.sessionStats.messageCount} messages`;
+
+    const separator1 = document.createElement('span');
+    separator1.textContent = '•';
+
+    const durationSpan = document.createElement('span');
+    durationSpan.textContent = sessionDuration;
+
+    const separator2 = document.createElement('span');
+    separator2.textContent = '•';
+
+    const avgCostSpan = document.createElement('span');
+    avgCostSpan.textContent = `$${avgCostPerMessage}/msg avg`;
+
+    summaryEl.appendChild(messagesSpan);
+    summaryEl.appendChild(separator1);
+    summaryEl.appendChild(durationSpan);
+    summaryEl.appendChild(separator2);
+    summaryEl.appendChild(avgCostSpan);
   }
 
   /**
@@ -859,6 +1090,57 @@ class NoxChatApp {
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
       }
     }, 100);
+  }
+
+  /**
+   * 🛟 Reset UI state for error recovery
+   */
+  private resetUIState(): void {
+    console.log('🛟 Resetting UI state for error recovery');
+
+    // Reset AI responding state
+    this.state.isAIResponding = false;
+
+    // Clear error boundary history
+    this.errorBoundary.clearHistory();
+
+    // Re-enable input
+    if (this.elements.messageInput) {
+      this.elements.messageInput.disabled = false;
+    }
+    if (this.elements.sendBtn) {
+      this.elements.sendBtn.disabled = false;
+    }
+
+    // Hide thinking indicator
+    this.showThinking(false);
+
+    console.log('🛟 UI state reset completed');
+  }
+
+  /**
+   * 🛟 Check and recover from errors automatically
+   */
+  private checkAndRecoverFromErrors(): boolean {
+    const stats = this.errorBoundary.getStats();
+
+    // If we have more than 5 errors, trigger auto-recovery
+    if (stats.totalErrors > 5) {
+      console.warn(`🛟 Auto-recovery triggered: ${stats.totalErrors} errors detected`);
+
+      // Reset UI state
+      this.resetUIState();
+
+      // Notify extension to reset its state too
+      this.sendMessage({ type: 'resetAI' });
+
+      // Show user notification
+      this.showError('Multiple errors detected. System has been automatically reset.');
+
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -1263,12 +1545,31 @@ class NoxChatApp {
   private startStreamingMessage(messageId: string): void {
     if (!this.elements.messagesContainer) return;
 
+    // 🔧 DEBUG: Check if element already exists
+    const existing = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (existing) {
+      console.error(`🚨 [STREAMING] Element already exists for ${messageId}! Removing it first.`);
+      existing.remove();
+    }
+
     // Hide thinking indicator if showing
     this.showThinking(false);
 
     // Create streaming message element
     const streamingEl = StreamingMessageComponent.create(messageId);
     this.elements.messagesContainer.appendChild(streamingEl);
+
+    // 🔧 DEBUG: Verify the element was created with data-streaming attribute
+    const verifyEl = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (verifyEl) {
+      const hasAttr = verifyEl.hasAttribute('data-streaming');
+      console.log(`🔧 [STREAMING] Element created for ${messageId}, has data-streaming: ${hasAttr}`);
+      if (!hasAttr) {
+        console.error(`🚨 [STREAMING] CRITICAL: Element created WITHOUT data-streaming attribute!`);
+      }
+    } else {
+      console.error(`🚨 [STREAMING] CRITICAL: Element not found after creation!`);
+    }
 
     // Set AI responding state
     this.state.isAIResponding = true;

@@ -568,42 +568,15 @@ class EnterpriseThemeService {
 
   /**
    * 🎨 Apply CSS variables to webviews for Aurora animations
+   * ✅ SECURITY FIX: Send CSS variables directly instead of script
    */
   async applyCSSVariables(theme) {
     try {
       const cssVariables = this.generateCSSVariables(theme);
 
-      // Create CSS injection script
-      const cssInjectionScript = `
-        (function() {
-          const root = document.documentElement;
-          const variables = ${JSON.stringify(cssVariables)};
-
-          // Apply all CSS variables with !important to override bundled defaults
-          Object.entries(variables).forEach(([property, value]) => {
-            root.style.setProperty(property, value, 'important');
-          });
-
-          // Log theme application for debugging
-          console.log('🎨 Aurora theme CSS variables applied:', '${
-            theme.name
-          }');
-          console.log('🎨 Variables:', variables);
-
-          // Trigger Aurora animation refresh
-          const auroraElements = document.querySelectorAll('.aurora-bg, .progress-fill');
-          auroraElements.forEach(el => {
-            el.style.animation = 'none';
-            el.offsetHeight; // Trigger reflow
-            el.style.animation = null;
-          });
-        })();
-      `;
-
-      // Send CSS injection to webviews
+      // ✅ SECURITY: Send CSS variables object instead of executable script
       const cssMessage = {
         type: "injectCSS",
-        script: cssInjectionScript,
         theme: {
           id: theme.id,
           name: theme.name,

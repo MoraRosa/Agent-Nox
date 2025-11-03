@@ -318,16 +318,27 @@ class NoxModalSystem {
     // Create header
     const header = document.createElement("div");
     header.className = "nox-modal-header";
-    header.innerHTML = `
-      <h2>${title}</h2>
-      <button class="nox-modal-close">✕</button>
-    `;
+
+    // ✅ SECURITY FIX: Use safe DOM methods instead of innerHTML
+    const titleEl = document.createElement("h2");
+    titleEl.textContent = title; // Safe: textContent escapes HTML
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "nox-modal-close";
+    closeBtn.textContent = "✕";
+
+    header.appendChild(titleEl);
+    header.appendChild(closeBtn);
 
     // Create body
     const bodyEl = document.createElement("div");
     bodyEl.className = "nox-modal-body";
-    bodyEl.innerHTML = typeof body === "string" ? body : "";
-    if (typeof body === "object") {
+
+    // ✅ SECURITY FIX: Only allow DOM elements, not HTML strings
+    if (typeof body === "string") {
+      // For string body, use textContent (safe) or require pre-sanitized HTML element
+      bodyEl.textContent = body;
+    } else if (typeof body === "object") {
       bodyEl.appendChild(body);
     }
 
@@ -337,7 +348,9 @@ class NoxModalSystem {
 
     buttons.forEach((btn) => {
       const button = document.createElement("button");
-      button.className = `nox-modal-button nox-modal-button-${btn.type || "secondary"}`;
+      button.className = `nox-modal-button nox-modal-button-${
+        btn.type || "secondary"
+      }`;
       button.textContent = btn.text;
       button.onclick = () => btn.onClick?.();
       footer.appendChild(button);
@@ -408,7 +421,8 @@ class NoxModalSystem {
    * 🔐 Create approval body HTML
    */
   createApprovalBody(description, details, riskLevel) {
-    const riskEmoji = { low: "🟢", medium: "🟡", high: "🔴" }[riskLevel] || "🟡";
+    const riskEmoji =
+      { low: "🟢", medium: "🟡", high: "🔴" }[riskLevel] || "🟡";
     return `
       <p><strong>${description}</strong></p>
       <div class="nox-modal-risk-level nox-modal-risk-${riskLevel}">
@@ -422,4 +436,3 @@ class NoxModalSystem {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = NoxModalSystem;
 }
-

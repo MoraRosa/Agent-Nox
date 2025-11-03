@@ -446,13 +446,79 @@ class AgentController {
   }
 
   /**
+   * 🔢 Estimate token count for a message (Phase 2A: Token Management)
+   * Simple estimation: ~4 characters per token (OpenAI's rule of thumb)
+   * @param {string} text - Text to estimate tokens for
+   * @returns {number} Estimated token count
+   */
+  estimateTokens(text) {
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * 🧠 Build messages array from chat history (Phase 2A: Chat Context Awareness)
+   * @param {string} currentUserMessage - The current user message (for token estimation only)
+   * @param {number} maxTokens - Maximum tokens allowed for context (default: 100000)
+   * @returns {Array} Array of message objects [{role, content}]
+   *
+   * NOTE: The current user message is already in chatHistory, so we don't add it again.
+   * This method just builds the messages array from the existing history with token limits.
+   */
+  buildMessagesFromHistory(currentUserMessage, maxTokens = 100000) {
+    const chatHistory = this.noxContextBuilder.getChatHistory();
+    const messages = [];
+
+    // Estimate tokens for current message (for reservation purposes)
+    const currentMessageTokens = this.estimateTokens(currentUserMessage);
+
+    // Reserve tokens for system prompt (~2000 tokens)
+    const reservedTokens = 2000;
+    const availableTokens = maxTokens - reservedTokens;
+
+    // Build messages array from most recent to oldest
+    let totalTokens = 0;
+    const reversedHistory = [...chatHistory].reverse();
+
+    for (const msg of reversedHistory) {
+      const msgTokens = this.estimateTokens(msg.content);
+
+      // Check if adding this message would exceed token limit
+      if (totalTokens + msgTokens > availableTokens) {
+        this.logger.debug(
+          `🔢 Token limit reached: ${
+            totalTokens + msgTokens
+          } > ${availableTokens}. Trimming older messages.`
+        );
+        break;
+      }
+
+      // Add message to the beginning (since we're iterating in reverse)
+      messages.unshift({
+        role: msg.role,
+        content: msg.content,
+      });
+
+      totalTokens += msgTokens;
+    }
+
+    this.logger.debug(
+      `🧠 Built messages array with ${messages.length} messages from history (~${totalTokens} tokens)`
+    );
+
+    return messages;
+  }
+
+  /**
    * 🤖 Execute NOX task with AI consciousness
    */
   async executeNoxTask(systemPrompt, taskPrompt, parameters) {
-    // Send to AI with proper system/user message structure
+    // Phase 2A: Build messages array from chat history for conversation memory
+    const messages = this.buildMessagesFromHistory(taskPrompt);
+
+    // Send to AI with proper system/user message structure and conversation history
     const response = await this.aiClient.sendRequestWithSystem(
       systemPrompt,
-      taskPrompt,
+      messages, // Pass messages array instead of single prompt
       {
         maxTokens: parameters.maxTokens || 4000,
         temperature: parameters.temperature || 0.7,
@@ -473,10 +539,38 @@ class AgentController {
     onComplete,
     abortController
   ) {
-    // Send streaming request with proper system/user message structure
+    // 🔧 FIX: Extract raw user message from parameters for chat history
+    // taskPrompt is a formatted prompt, but buildMessagesFromHistory needs the raw message
+    const rawUserMessage = parameters.message || taskPrompt;
+
+    // Phase 2A: Build messages array from chat history for conversation memory
+    const messages = this.buildMessagesFromHistory(rawUserMessage);
+
+    // 🔍 DEBUG: Log what we're sending to the AI (only in debug mode)
+    if (this.aiClient.debugMode) {
+      const chatHistory = this.noxContextBuilder.getChatHistory();
+      console.log("🔍 [CHAT HISTORY DEBUG] Raw user message:", rawUserMessage);
+      console.log(
+        "🔍 [CHAT HISTORY DEBUG] Chat history length:",
+        chatHistory.length
+      );
+      console.log(
+        "🔍 [CHAT HISTORY DEBUG] Full chat history:",
+        chatHistory.map(
+          (msg, idx) =>
+            `${idx + 1}. [${msg.role}] ${msg.content.substring(0, 50)}...`
+        )
+      );
+      console.log(
+        "🔍 [CHAT HISTORY DEBUG] Messages array being sent to AI:",
+        JSON.stringify(messages, null, 2)
+      );
+    }
+
+    // Send streaming request with proper system/user message structure and conversation history
     await this.aiClient.sendStreamingRequestWithSystem(
       systemPrompt,
-      taskPrompt,
+      messages, // Pass messages array instead of single prompt
       {
         maxTokens: parameters.maxTokens || 4000,
         temperature: parameters.temperature || 0.7,

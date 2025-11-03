@@ -241,4 +241,5 @@ export interface WebviewState {
   currentProvider: string;
   currentModel: string;
   isAIResponding: boolean;
+  isInitialized: boolean; // 🔧 FIX: Track initialization state to prevent first-interaction glitch
 }
