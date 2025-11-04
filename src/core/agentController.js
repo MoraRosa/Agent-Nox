@@ -6,6 +6,16 @@ const NoxSystemPrompt = require("./noxSystemPrompt");
 const NoxCapabilities = require("./noxCapabilities");
 const NoxContextBuilder = require("./noxContextBuilder");
 
+// NOX 3-mode system (Phase 2B)
+const NoxModeManager = require("./modes/NoxModeManager");
+const NoxTaskPlanner = require("./modes/NoxTaskPlanner");
+const NoxToolAdapter = require("./NoxToolAdapter");
+const StreamingToolHandler = require("./StreamingToolHandler");
+const {
+  initializeCapabilities,
+  getCapabilityRegistry,
+} = require("./capabilities");
+
 /**
  * Main Agent Controller - orchestrates all agent operations with enterprise-grade architecture
  */
@@ -27,6 +37,13 @@ class AgentController {
     this.noxSystemPrompt = null;
     this.noxCapabilities = null;
     this.noxContextBuilder = null;
+
+    // NOX 3-mode system (Phase 2B)
+    this.modeManager = null;
+    this.taskPlanner = null;
+    this.capabilityRegistry = null;
+    this.toolAdapter = null;
+    this.streamingToolHandler = null; // Phase 2B-3: Streaming + Tools
 
     // State management
     this.isInitialized = false;
@@ -210,13 +227,57 @@ class AgentController {
         this.performanceMonitor
       );
 
+      // Initialize NOX 3-mode system (Phase 2B)
+      this.modeManager = new NoxModeManager();
+
+      // Initialize capability registry with context
+      this.capabilityRegistry = initializeCapabilities({
+        fileOps: this.fileOps,
+        gitOps: null, // TODO: Initialize gitOps
+        terminalManager: null, // TODO: Initialize terminalManager
+        logger: this.logger,
+        performanceMonitor: this.performanceMonitor,
+      });
+
+      // Initialize tool adapter for AI tool calling
+      this.toolAdapter = new NoxToolAdapter(
+        this.capabilityRegistry,
+        this.logger
+      );
+
+      // Initialize task planner
+      this.taskPlanner = new NoxTaskPlanner(
+        this.aiClient,
+        this.capabilityRegistry,
+        this.modeManager
+      );
+
+      // Initialize streaming tool handler (Phase 2B-3)
+      // Note: webviewView will be set later via setWebviewView()
+      this.streamingToolHandler = new StreamingToolHandler(
+        this.capabilityRegistry,
+        this.modeManager,
+        null, // webviewView set later
+        this.logger
+      );
+
       this.logger.info(
-        "Core components and NOX consciousness initialized successfully"
+        "Core components, NOX consciousness, and 3-mode system initialized successfully"
       );
     } catch (error) {
       throw new Error(
         `Core components initialization failed: ${error.message}`
       );
+    }
+  }
+
+  /**
+   * 🔗 Set webview reference for streaming tool handler (Phase 2B-3)
+   */
+  setWebviewView(webviewView) {
+    if (this.streamingToolHandler) {
+      this.streamingToolHandler.webviewView = webviewView;
+      this.logger.info("Webview reference set for streaming tool handler");
     }
   }
 
@@ -308,6 +369,43 @@ class AgentController {
     } catch (error) {
       this.logger.error("Failed to update configuration:", error);
     }
+  }
+
+  /**
+   * 🦊 NOX MODE MANAGEMENT (Phase 2B)
+   */
+
+  /**
+   * Get current NOX mode
+   */
+  getCurrentMode() {
+    return this.modeManager ? this.modeManager.getCurrentMode() : "assistant";
+  }
+
+  /**
+   * Set NOX mode
+   */
+  setMode(mode) {
+    if (!this.modeManager) {
+      throw new Error("Mode manager not initialized");
+    }
+
+    this.logger.info(`🦊 Switching NOX mode to: ${mode}`);
+    return this.modeManager.setMode(mode);
+  }
+
+  /**
+   * Get all available modes
+   */
+  getAllModes() {
+    return this.modeManager ? this.modeManager.getAllModes() : [];
+  }
+
+  /**
+   * Get mode configuration
+   */
+  getModeConfig(mode = null) {
+    return this.modeManager ? this.modeManager.getModeConfig(mode) : null;
   }
 
   /**
@@ -480,6 +578,14 @@ class AgentController {
     const reversedHistory = [...chatHistory].reverse();
 
     for (const msg of reversedHistory) {
+      // Skip messages with empty content (Claude API requirement)
+      if (!msg.content || msg.content.trim() === "") {
+        this.logger.debug(
+          `⚠️ Skipping empty message from ${msg.role} in chat history`
+        );
+        continue;
+      }
+
       const msgTokens = this.estimateTokens(msg.content);
 
       // Check if adding this message would exceed token limit
@@ -509,27 +615,139 @@ class AgentController {
   }
 
   /**
-   * 🤖 Execute NOX task with AI consciousness
+   * 🤖 Execute NOX task with AI consciousness and tool calling (Phase 2B)
    */
   async executeNoxTask(systemPrompt, taskPrompt, parameters) {
     // Phase 2A: Build messages array from chat history for conversation memory
     const messages = this.buildMessagesFromHistory(taskPrompt);
 
-    // Send to AI with proper system/user message structure and conversation history
-    const response = await this.aiClient.sendRequestWithSystem(
-      systemPrompt,
-      messages, // Pass messages array instead of single prompt
-      {
-        maxTokens: parameters.maxTokens || 4000,
-        temperature: parameters.temperature || 0.7,
-      }
+    // Phase 2B: Check if provider supports tool calling
+    const currentProvider = this.aiClient.currentProvider;
+    const supportsToolCalling =
+      this.toolAdapter.supportsToolCalling(currentProvider);
+
+    this.logger.info(
+      `🦊 Executing NOX task with ${currentProvider} (tool calling: ${supportsToolCalling})`
     );
+
+    // Get available capabilities for current mode
+    const currentMode = this.modeManager.getCurrentMode();
+    const availableCapabilities =
+      this.capabilityRegistry.getByMode(currentMode);
+
+    if (supportsToolCalling && availableCapabilities.length > 0) {
+      // Use tool calling for reliable capability execution
+      return await this.executeWithToolCalling(
+        systemPrompt,
+        messages,
+        availableCapabilities,
+        parameters
+      );
+    } else {
+      // Fallback to text parsing or simple response
+      if (!supportsToolCalling && availableCapabilities.length > 0) {
+        this.logger.warn(
+          `⚠️ Provider ${currentProvider} does not support tool calling. Using text parsing fallback.`
+        );
+      }
+
+      // Send to AI with proper system/user message structure and conversation history
+      const response = await this.aiClient.sendRequestWithSystem(
+        systemPrompt,
+        messages,
+        {
+          maxTokens: parameters.maxTokens || 4000,
+          temperature: parameters.temperature || 0.7,
+        }
+      );
+
+      return response;
+    }
+  }
+
+  /**
+   * 🛠️ Execute NOX task with tool calling (Phase 2B)
+   */
+  async executeWithToolCalling(
+    systemPrompt,
+    messages,
+    capabilities,
+    parameters
+  ) {
+    const currentProvider = this.aiClient.currentProvider;
+
+    // Convert capabilities to tool definitions
+    const tools = this.toolAdapter.capabilitiesToTools(
+      capabilities,
+      currentProvider
+    );
+
+    this.logger.info(
+      `🛠️ Sending request with ${tools.length} tools to ${currentProvider}`
+    );
+
+    // Get API key
+    const apiKey = await this.aiClient.getApiKey(currentProvider);
+    if (!apiKey) {
+      throw new Error(`No API key configured for ${currentProvider}`);
+    }
+
+    // Call appropriate provider method with tools
+    let response;
+    const requestOptions = {
+      maxTokens: parameters.maxTokens || 4000,
+      temperature: parameters.temperature || 0.7,
+      model: this.aiClient.currentModel,
+    };
+
+    switch (currentProvider) {
+      case "openai":
+        response = await this.aiClient.callOpenAIAPIWithTools(
+          apiKey,
+          systemPrompt,
+          messages,
+          tools,
+          requestOptions
+        );
+        break;
+
+      case "anthropic":
+        response = await this.aiClient.callAnthropicAPIWithTools(
+          apiKey,
+          systemPrompt,
+          messages,
+          tools,
+          requestOptions
+        );
+        break;
+
+      default:
+        // Fallback to regular call
+        response = await this.aiClient.sendRequestWithSystem(
+          systemPrompt,
+          messages,
+          requestOptions
+        );
+    }
+
+    // Parse tool calls from response
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      const toolCalls = this.toolAdapter.parseToolCalls(
+        response,
+        currentProvider
+      );
+
+      this.logger.info(`🛠️ AI requested ${toolCalls.length} tool calls`);
+
+      // Store tool calls in response for processing
+      response.parsedToolCalls = toolCalls;
+    }
 
     return response;
   }
 
   /**
-   * 🌊 Execute NOX streaming task with AI consciousness
+   * 🌊 Execute NOX streaming task with AI consciousness + TOOL CALLING (Phase 2B-3)
    */
   async executeNoxStreamingTask(
     systemPrompt,
@@ -567,23 +785,76 @@ class AgentController {
       );
     }
 
-    // Send streaming request with proper system/user message structure and conversation history
-    await this.aiClient.sendStreamingRequestWithSystem(
-      systemPrompt,
-      messages, // Pass messages array instead of single prompt
-      {
-        maxTokens: parameters.maxTokens || 4000,
-        temperature: parameters.temperature || 0.7,
-        messageId: parameters.messageId,
-      },
-      onChunk,
-      onComplete,
-      abortController
-    );
+    // 🛠️ PHASE 2B-3: Check if provider supports tool calling
+    const currentProvider = this.aiClient.currentProvider;
+    const supportsToolCalling =
+      this.toolAdapter.supportsToolCalling(currentProvider);
+
+    // Get available capabilities for current mode
+    const currentMode = this.modeManager.getCurrentMode();
+    const availableCapabilities =
+      this.capabilityRegistry.getByMode(currentMode);
+
+    if (supportsToolCalling && availableCapabilities.length > 0) {
+      // 🛠️ USE STREAMING + TOOLS for best UX!
+      this.logger.info(
+        `🛠️ Using streaming + tools with ${availableCapabilities.length} capabilities`
+      );
+
+      // Convert capabilities to tool definitions
+      const tools = this.toolAdapter.capabilitiesToTools(
+        availableCapabilities,
+        currentProvider
+      );
+
+      // Send streaming request with tools
+      await this.aiClient.sendStreamingRequestWithTools(
+        systemPrompt,
+        messages,
+        tools,
+        {
+          maxTokens: parameters.maxTokens || 4000,
+          temperature: parameters.temperature || 0.7,
+          messageId: parameters.messageId,
+        },
+        {
+          onChunk: onChunk,
+          onToolCall: async (toolCall) => {
+            // Handle tool call during streaming
+            const result = await this.streamingToolHandler.handleToolCall(
+              toolCall,
+              parameters.messageId
+            );
+            return result;
+          },
+          onToolResult: null, // Not needed for now
+          onComplete: onComplete,
+        },
+        abortController
+      );
+    } else {
+      // Fallback: Regular streaming without tools
+      this.logger.info(
+        `🌊 Using regular streaming (provider: ${currentProvider}, supports tools: ${supportsToolCalling})`
+      );
+
+      await this.aiClient.sendStreamingRequestWithSystem(
+        systemPrompt,
+        messages,
+        {
+          maxTokens: parameters.maxTokens || 4000,
+          temperature: parameters.temperature || 0.7,
+          messageId: parameters.messageId,
+        },
+        onChunk,
+        onComplete,
+        abortController
+      );
+    }
   }
 
   /**
-   * 🔄 Process NOX result and execute capabilities
+   * 🔄 Process NOX result and execute capabilities (Phase 2B)
    */
   async processNoxResult(taskType, aiResponse, parameters, noxContext) {
     const timer = this.performanceMonitor.startTimer(
@@ -617,17 +888,30 @@ class AgentController {
         },
       };
 
-      // Execute task-specific capabilities
-      await this.executeTaskCapabilities(
-        taskType,
-        aiResponse,
-        parameters,
-        noxContext,
-        result
-      );
+      // Phase 2B: Execute tool calls if present
+      if (aiResponse.parsedToolCalls && aiResponse.parsedToolCalls.length > 0) {
+        this.logger.info(
+          `🛠️ Executing ${aiResponse.parsedToolCalls.length} tool calls from AI`
+        );
 
-      // Parse AI response for capability suggestions
-      await this.parseCapabilitySuggestions(aiResponse.content, result);
+        await this.executeToolCalls(
+          aiResponse.parsedToolCalls,
+          result,
+          noxContext
+        );
+      } else {
+        // Legacy: Execute task-specific capabilities (backward compatible)
+        await this.executeTaskCapabilities(
+          taskType,
+          aiResponse,
+          parameters,
+          noxContext,
+          result
+        );
+
+        // Parse AI response for capability suggestions
+        await this.parseCapabilitySuggestions(aiResponse.content, result);
+      }
 
       timer.end();
       result.processingTime = timer.duration;
@@ -662,6 +946,80 @@ class AgentController {
         },
       };
     }
+  }
+
+  /**
+   * 🛠️ Execute tool calls from AI (Phase 2B)
+   */
+  async executeToolCalls(toolCalls, result, noxContext) {
+    const currentMode = this.modeManager.getCurrentMode();
+    const modeConfig = this.modeManager.getModeConfig(currentMode);
+
+    this.logger.info(
+      `🛠️ Executing ${toolCalls.length} tool calls in ${currentMode} mode`
+    );
+
+    for (const toolCall of toolCalls) {
+      try {
+        const { id, name, parameters } = toolCall;
+
+        this.logger.info(`🛠️ Executing tool: ${name} with params:`, parameters);
+
+        // Get capability from registry
+        const capability = this.capabilityRegistry.getById(name);
+        if (!capability) {
+          this.logger.error(`❌ Capability not found: ${name}`);
+          result.capabilities.executed.push({
+            id: name,
+            status: "error",
+            error: `Capability ${name} not found`,
+          });
+          continue;
+        }
+
+        // Check if approval is required based on mode
+        const requiresApproval = modeConfig.requiresApproval(capability);
+
+        if (requiresApproval) {
+          this.logger.info(
+            `⚠️ Capability ${name} requires approval in ${currentMode} mode`
+          );
+
+          // TODO: Implement approval UI
+          // For now, we'll skip capabilities that require approval
+          result.capabilities.requiresApproval.push({
+            id: name,
+            parameters,
+            reason: `${currentMode} mode requires approval for ${capability.metadata.riskLevel} risk capabilities`,
+          });
+          continue;
+        }
+
+        // Execute capability
+        this.logger.info(`✅ Executing capability: ${name}`);
+        const executionResult = await capability.execute(parameters);
+
+        result.capabilities.executed.push({
+          id: name,
+          status: "success",
+          result: executionResult,
+          timestamp: Date.now(),
+        });
+
+        this.logger.info(`✅ Capability ${name} executed successfully`);
+      } catch (error) {
+        this.logger.error(`❌ Failed to execute tool call:`, error);
+        result.capabilities.executed.push({
+          id: toolCall.name,
+          status: "error",
+          error: error.message,
+        });
+      }
+    }
+
+    this.logger.info(
+      `🛠️ Tool execution complete: ${result.capabilities.executed.length} executed, ${result.capabilities.requiresApproval.length} require approval`
+    );
   }
 
   /**

@@ -599,6 +599,15 @@ class NoxChatApp {
         this.handleStreamStopped(message.messageId, message.partialContent);
         break;
 
+      // 🛠️ PHASE 2B-3: Tool calling handlers
+      case 'toolStatus':
+        this.handleToolStatus(message.messageId, message.status);
+        break;
+
+      case 'toolApprovalRequest':
+        this.handleToolApprovalRequest(message.messageId, message.toolId, message.capability, message.parameters);
+        break;
+
       case 'injectCSS':
         // Handle CSS injection for Aurora theme animations
         this.handleCSSInjection(message);
@@ -1637,6 +1646,225 @@ class NoxChatApp {
     this.state.isAIResponding = false;
 
     console.log('⏹️ Stream stopped for message:', messageId);
+  }
+
+  /**
+   * 🛠️ PHASE 2B-3: Handle tool status update
+   */
+  private handleToolStatus(messageId: string, status: any): void {
+    console.log('🛠️ Tool status:', status);
+
+    // Find the message element
+    const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageEl) {
+      console.warn(`Message element not found for: ${messageId}`);
+      return;
+    }
+
+    // Create or update tool status container
+    let toolStatusContainer = messageEl.querySelector('.tool-status-container') as HTMLElement;
+    if (!toolStatusContainer) {
+      toolStatusContainer = document.createElement('div');
+      toolStatusContainer.className = 'tool-status-container';
+
+      // Insert after header, before message content
+      const headerEl = messageEl.querySelector('.streaming-header, .message-header');
+      if (headerEl && headerEl.nextSibling) {
+        messageEl.insertBefore(toolStatusContainer, headerEl.nextSibling);
+      } else {
+        const contentEl = messageEl.querySelector('.message-content');
+        if (contentEl) {
+          messageEl.insertBefore(toolStatusContainer, contentEl);
+        } else {
+          messageEl.appendChild(toolStatusContainer);
+        }
+      }
+    }
+
+    // Find or create status item for this specific tool
+    let toolStatusItem = toolStatusContainer.querySelector(`[data-tool-id="${status.toolId}"]`) as HTMLElement;
+    if (!toolStatusItem) {
+      toolStatusItem = document.createElement('div');
+      toolStatusItem.className = 'tool-status-item';
+      toolStatusItem.setAttribute('data-tool-id', status.toolId);
+      toolStatusContainer.appendChild(toolStatusItem);
+    }
+
+    // Update status class and content
+    toolStatusItem.className = `tool-status-item ${status.status}`;
+
+    // ✅ SECURITY: Build with safe DOM methods
+    toolStatusItem.innerHTML = '';
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'tool-icon';
+    iconSpan.textContent = status.icon;
+
+    const messageSpan = document.createElement('span');
+    messageSpan.className = 'tool-message';
+    messageSpan.textContent = status.message;
+
+    toolStatusItem.appendChild(iconSpan);
+    toolStatusItem.appendChild(messageSpan);
+
+    // If status is success or error, add fade-out after 3 seconds
+    if (status.status === 'success' || status.status === 'denied') {
+      setTimeout(() => {
+        toolStatusItem.style.opacity = '0.5';
+        toolStatusItem.style.transition = 'opacity 1s ease';
+      }, 3000);
+    }
+
+    // Auto-scroll to show tool execution
+    this.scrollToBottom();
+  }
+
+  /**
+   * 🛠️ PHASE 2B-3: Handle tool approval request
+   */
+  private handleToolApprovalRequest(messageId: string, toolId: string, capability: any, parameters: any): void {
+    console.log('🛠️ Tool approval request:', { messageId, toolId, capability, parameters });
+
+    // Find the message element
+    const messageEl = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageEl) {
+      console.warn(`Message element not found for: ${messageId}`);
+      return;
+    }
+
+    // ✅ SECURITY: Build approval UI with safe DOM methods
+    const approvalEl = document.createElement('div');
+    approvalEl.className = 'tool-approval-request';
+    approvalEl.setAttribute('data-tool-id', toolId);
+
+    // Header
+    const headerEl = document.createElement('div');
+    headerEl.className = 'approval-header';
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'approval-icon';
+    iconSpan.textContent = '🔐';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'approval-title';
+    titleSpan.textContent = 'Approval Required';
+
+    headerEl.appendChild(iconSpan);
+    headerEl.appendChild(titleSpan);
+
+    // Details section
+    const detailsEl = document.createElement('div');
+    detailsEl.className = 'approval-details';
+
+    // Capability info
+    const capabilityEl = document.createElement('div');
+    capabilityEl.className = 'approval-capability';
+
+    const capabilityName = document.createElement('strong');
+    capabilityName.textContent = capability.name;
+
+    const riskBadge = document.createElement('span');
+    riskBadge.className = `risk-badge risk-${capability.riskLevel.toLowerCase()}`;
+    riskBadge.textContent = capability.riskLevel.toUpperCase();
+
+    capabilityEl.appendChild(capabilityName);
+    capabilityEl.appendChild(riskBadge);
+
+    // Description
+    const descriptionEl = document.createElement('div');
+    descriptionEl.className = 'approval-description';
+    descriptionEl.textContent = capability.description;
+
+    // Parameters (initially hidden)
+    const parametersEl = document.createElement('div');
+    parametersEl.className = 'approval-parameters';
+    parametersEl.style.display = 'none';
+
+    const paramsLabel = document.createElement('strong');
+    paramsLabel.textContent = 'Parameters:';
+
+    const paramsPre = document.createElement('pre');
+    paramsPre.textContent = JSON.stringify(parameters, null, 2);
+
+    parametersEl.appendChild(paramsLabel);
+    parametersEl.appendChild(paramsPre);
+
+    detailsEl.appendChild(capabilityEl);
+    detailsEl.appendChild(descriptionEl);
+    detailsEl.appendChild(parametersEl);
+
+    // Action buttons
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'approval-actions';
+
+    const approveBtn = document.createElement('button');
+    approveBtn.className = 'approval-btn approve-btn';
+    approveBtn.textContent = '✅ Approve';
+    approveBtn.onclick = () => {
+      this.sendToolApprovalResponse(messageId, toolId, true);
+      approvalEl.remove();
+    };
+
+    const denyBtn = document.createElement('button');
+    denyBtn.className = 'approval-btn deny-btn';
+    denyBtn.textContent = '🚫 Deny';
+    denyBtn.onclick = () => {
+      this.sendToolApprovalResponse(messageId, toolId, false);
+      approvalEl.remove();
+    };
+
+    const detailsBtn = document.createElement('button');
+    detailsBtn.className = 'approval-btn details-btn';
+    detailsBtn.textContent = '📋 Details';
+    detailsBtn.onclick = () => {
+      // Toggle parameters visibility
+      if (parametersEl.style.display === 'none') {
+        parametersEl.style.display = 'block';
+        detailsBtn.textContent = '📋 Hide Details';
+      } else {
+        parametersEl.style.display = 'none';
+        detailsBtn.textContent = '📋 Details';
+      }
+    };
+
+    actionsEl.appendChild(approveBtn);
+    actionsEl.appendChild(denyBtn);
+    actionsEl.appendChild(detailsBtn);
+
+    // Assemble approval UI
+    approvalEl.appendChild(headerEl);
+    approvalEl.appendChild(detailsEl);
+    approvalEl.appendChild(actionsEl);
+
+    // Insert after header, before content (same position as tool status)
+    const headerElement = messageEl.querySelector('.streaming-header, .message-header');
+    if (headerElement && headerElement.nextSibling) {
+      messageEl.insertBefore(approvalEl, headerElement.nextSibling);
+    } else {
+      const contentEl = messageEl.querySelector('.message-content');
+      if (contentEl) {
+        messageEl.insertBefore(approvalEl, contentEl);
+      } else {
+        messageEl.appendChild(approvalEl);
+      }
+    }
+
+    // Auto-scroll to show approval request
+    this.scrollToBottom();
+  }
+
+  /**
+   * 🛠️ PHASE 2B-3: Send tool approval response
+   */
+  private sendToolApprovalResponse(messageId: string, toolId: string, approved: boolean): void {
+    console.log('🛠️ Sending tool approval response:', { messageId, toolId, approved });
+
+    this.sendMessage({
+      type: 'toolApprovalResponse',
+      messageId: messageId,
+      toolId: toolId,
+      approved: approved
+    } as any);
   }
 
   /**

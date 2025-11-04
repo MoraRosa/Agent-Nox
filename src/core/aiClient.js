@@ -403,6 +403,121 @@ class AIClient {
   }
 
   /**
+   * 🛠️ Send streaming request with TOOL CALLING support - PHASE 2B-3
+   * This enables AI to stream text AND call tools mid-stream for the best UX!
+   */
+  async sendStreamingRequestWithTools(
+    systemPrompt,
+    userPrompt,
+    tools = [],
+    options = {},
+    callbacks = {},
+    abortController = null
+  ) {
+    if (!this.isInitialized) {
+      throw new Error("AI Client not initialized");
+    }
+
+    const timer = this.performanceMonitor.startTimer(
+      "ai_streaming_request_with_tools"
+    );
+    const provider = this.providers[this.currentProvider];
+    const messageId = options.messageId || Date.now().toString();
+
+    // Callbacks: onChunk, onToolCall, onToolResult, onComplete
+    const {
+      onChunk = null,
+      onToolCall = null,
+      onToolResult = null,
+      onComplete = null,
+    } = callbacks;
+
+    return await this.errorBoundary.wrapAsyncWithRetry(
+      async () => {
+        try {
+          this.logger.info(
+            `🛠️ Sending streaming request with ${tools.length} tools to ${provider.name}...`
+          );
+
+          // Get API key
+          const apiKey = await this.getApiKey(this.currentProvider);
+          if (!apiKey) {
+            throw new Error(
+              `No API key configured for ${provider.name}. Please set up your API key first.`
+            );
+          }
+
+          const requestOptions = {
+            ...options,
+            model: options.model || this.currentModel,
+          };
+
+          // Route to provider-specific streaming + tools implementation
+          switch (this.currentProvider) {
+            case "openai":
+              await this.callOpenAIStreamingAPIWithTools(
+                apiKey,
+                systemPrompt,
+                userPrompt,
+                tools,
+                requestOptions,
+                { onChunk, onToolCall, onToolResult, onComplete },
+                abortController
+              );
+              break;
+            case "anthropic":
+              await this.callAnthropicStreamingAPIWithTools(
+                apiKey,
+                systemPrompt,
+                userPrompt,
+                tools,
+                requestOptions,
+                { onChunk, onToolCall, onToolResult, onComplete },
+                abortController
+              );
+              break;
+            default:
+              // Fallback: streaming without tools for unsupported providers
+              this.logger.warn(
+                `Provider ${this.currentProvider} doesn't support streaming + tools. Falling back to regular streaming.`
+              );
+              await this.sendStreamingRequestWithSystem(
+                systemPrompt,
+                userPrompt,
+                requestOptions,
+                onChunk,
+                onComplete,
+                abortController
+              );
+          }
+
+          timer.end();
+          this.performanceMonitor.recordMetric(
+            "ai_streaming_request_with_tools_success",
+            1
+          );
+        } catch (error) {
+          timer.end();
+          this.performanceMonitor.recordMetric(
+            "ai_streaming_request_with_tools_error",
+            1
+          );
+          this.logger.error(`Streaming request with tools failed:`, error);
+          throw error;
+        }
+      },
+      `Streaming request with tools to ${provider.name}`,
+      {
+        maxRetries: 2,
+        retryDelay: 1000,
+        shouldRetry: (error) => {
+          return this.errorBoundary.isRetryableError(error);
+        },
+      }
+    );
+  }
+
+  /**
    * 🌊 Send streaming request to AI provider - REAL-TIME IMPLEMENTATION
    */
   async sendStreamingRequest(
@@ -693,6 +808,85 @@ class AIClient {
   }
 
   /**
+   * 🦊 Call Anthropic Claude API with system prompt and tool use - NOX TOOL CALLING
+   * @param {string} apiKey - Anthropic API key
+   * @param {string} systemPrompt - System prompt for AI identity
+   * @param {string|Array} userPromptOrMessages - Single user prompt OR array of message objects [{role, content}]
+   * @param {Array} tools - Array of tool definitions (Claude tool use format)
+   * @param {Object} options - Request options
+   */
+  async callAnthropicAPIWithTools(
+    apiKey,
+    systemPrompt,
+    userPromptOrMessages,
+    tools = [],
+    options = {}
+  ) {
+    try {
+      const model = options.model || this.providers.anthropic.defaultModel;
+      const maxTokens = options.maxTokens || 4000;
+
+      // Support both single prompt (backward compatible) and messages array
+      let messages;
+      if (typeof userPromptOrMessages === "string") {
+        messages = [
+          {
+            role: "user",
+            content: userPromptOrMessages,
+          },
+        ];
+      } else if (Array.isArray(userPromptOrMessages)) {
+        messages = userPromptOrMessages;
+      } else {
+        throw new Error("userPromptOrMessages must be a string or array");
+      }
+
+      const requestBody = {
+        model: model,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: messages,
+        temperature: options.temperature || 0.7,
+      };
+
+      // Add tools if provided
+      if (tools && tools.length > 0) {
+        requestBody.tools = tools;
+      }
+
+      const response = await axios.post(
+        "https://api.anthropic.com/v1/messages",
+        requestBody,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          timeout: 60000, // 60 second timeout
+        }
+      );
+
+      const data = response.data;
+
+      return {
+        id: Date.now().toString(),
+        type: "assistant",
+        content: data.content, // Claude returns array of content blocks
+        tool_calls: data.content.filter((block) => block.type === "tool_use"), // Extract tool uses
+        provider: "anthropic",
+        model: model,
+        tokens: data.usage.input_tokens + data.usage.output_tokens,
+        cost: this.calculateAnthropicCost(data.usage, model),
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error("Anthropic API with tools call failed:", error);
+      throw this.enhanceError(error);
+    }
+  }
+
+  /**
    * 🦊 Call Anthropic Claude API with system prompt - NOX CONSCIOUSNESS
    * @param {string} apiKey - Anthropic API key
    * @param {string} systemPrompt - System prompt for AI identity
@@ -818,6 +1012,86 @@ class AIClient {
       } else {
         throw new Error(`Anthropic API: ${error.message}`);
       }
+    }
+  }
+
+  /**
+   * 🦊 Call OpenAI GPT API with system prompt and tool calling - NOX TOOL CALLING
+   * @param {string} apiKey - OpenAI API key
+   * @param {string} systemPrompt - System prompt for AI identity
+   * @param {string|Array} userPromptOrMessages - Single user prompt OR array of message objects [{role, content}]
+   * @param {Array} tools - Array of tool definitions (OpenAI function calling format)
+   * @param {Object} options - Request options
+   */
+  async callOpenAIAPIWithTools(
+    apiKey,
+    systemPrompt,
+    userPromptOrMessages,
+    tools = [],
+    options = {}
+  ) {
+    try {
+      const model = options.model || this.providers.openai.defaultModel;
+      const maxTokens = options.maxTokens || 4000;
+
+      // Support both single prompt (backward compatible) and messages array
+      let messages;
+      if (typeof userPromptOrMessages === "string") {
+        messages = [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPromptOrMessages },
+        ];
+      } else if (Array.isArray(userPromptOrMessages)) {
+        messages = [
+          { role: "system", content: systemPrompt },
+          ...userPromptOrMessages,
+        ];
+      } else {
+        throw new Error("userPromptOrMessages must be a string or array");
+      }
+
+      const requestBody = {
+        model: model,
+        messages: messages,
+        max_tokens: maxTokens,
+        temperature: options.temperature || 0.7,
+      };
+
+      // Add tools if provided
+      if (tools && tools.length > 0) {
+        requestBody.tools = tools;
+        requestBody.tool_choice = options.tool_choice || "auto";
+      }
+
+      const response = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
+        requestBody,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          timeout: 60000, // 60 second timeout
+        }
+      );
+
+      const data = response.data;
+      const message = data.choices[0].message;
+
+      return {
+        id: Date.now().toString(),
+        type: "assistant",
+        content: message.content,
+        tool_calls: message.tool_calls || [], // Include tool calls if present
+        provider: "openai",
+        model: model,
+        tokens: data.usage.total_tokens,
+        cost: this.calculateOpenAICost(data.usage, model),
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error("OpenAI API with tools call failed:", error);
+      throw this.enhanceError(error);
     }
   }
 
@@ -1101,6 +1375,249 @@ class AIClient {
       return finalMessage;
     } catch (error) {
       this.logger.error("OpenAI streaming API with system failed:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 🛠️ OpenAI Streaming API with TOOL CALLING - PHASE 2B-3
+   * Streams text AND handles tool calls mid-stream for ultimate UX!
+   */
+  async callOpenAIStreamingAPIWithTools(
+    apiKey,
+    systemPrompt,
+    userPromptOrMessages,
+    tools,
+    options,
+    callbacks,
+    abortController = null
+  ) {
+    const model = options.model || this.providers.openai.defaultModel;
+    const maxTokens = options.maxTokens || 4000;
+    const messageId = options.messageId || Date.now().toString();
+
+    const { onChunk, onToolCall, onToolResult, onComplete } = callbacks;
+
+    // Build messages array
+    let messages;
+    if (typeof userPromptOrMessages === "string") {
+      messages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPromptOrMessages },
+      ];
+    } else if (Array.isArray(userPromptOrMessages)) {
+      messages = [
+        { role: "system", content: systemPrompt },
+        ...userPromptOrMessages,
+      ];
+    } else {
+      throw new Error("userPromptOrMessages must be a string or array");
+    }
+
+    try {
+      console.log(
+        `🛠️ STREAMING + TOOLS: Starting OpenAI stream with ${tools.length} tools for message: ${messageId}`
+      );
+
+      const response = await fetch(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: messages,
+            max_tokens: maxTokens,
+            stream: true,
+            temperature: options.temperature || 0.7,
+            tools: tools, // 🛠️ TOOLS ENABLED!
+            tool_choice: options.tool_choice || "auto",
+          }),
+          signal: abortController?.signal,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `OpenAI API error: ${response.status} ${response.statusText}`
+        );
+      }
+
+      // Stream processing with tool call detection
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = "";
+      let totalTokens = 0;
+      let toolCalls = []; // Accumulate tool calls
+      let currentToolCall = null;
+
+      while (true) {
+        if (abortController?.signal?.aborted) break;
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            if (data === "[DONE]") continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              const delta = parsed.choices?.[0]?.delta;
+
+              // Handle text content streaming
+              if (delta?.content) {
+                const chunkText = delta.content;
+                fullContent += chunkText;
+                totalTokens += 1;
+
+                if (onChunk) {
+                  onChunk({
+                    messageId: messageId,
+                    chunk: chunkText,
+                    tokens: totalTokens,
+                    isComplete: false,
+                  });
+                }
+              }
+
+              // Handle tool calls streaming
+              if (delta?.tool_calls) {
+                for (const toolCallDelta of delta.tool_calls) {
+                  const index = toolCallDelta.index;
+
+                  // Initialize new tool call
+                  if (!toolCalls[index]) {
+                    toolCalls[index] = {
+                      id: toolCallDelta.id || `tool_${index}`,
+                      type: "function",
+                      function: {
+                        name: "",
+                        arguments: "",
+                      },
+                    };
+                  }
+
+                  // Accumulate function name
+                  if (toolCallDelta.function?.name) {
+                    toolCalls[index].function.name +=
+                      toolCallDelta.function.name;
+                  }
+
+                  // Accumulate function arguments
+                  if (toolCallDelta.function?.arguments) {
+                    toolCalls[index].function.arguments +=
+                      toolCallDelta.function.arguments;
+                  }
+                }
+              }
+            } catch (e) {
+              // Ignore JSON parse errors for incomplete chunks
+            }
+          }
+        }
+      }
+
+      // Process tool calls if any were detected
+      if (toolCalls.length > 0) {
+        console.log(
+          `🛠️ STREAMING + TOOLS: Detected ${toolCalls.length} tool calls`
+        );
+
+        for (const toolCall of toolCalls) {
+          if (onToolCall && toolCall.id && toolCall.function?.name) {
+            try {
+              // 🔍 DEBUG: Log raw arguments string
+              console.log(
+                `🔍 DEBUG: Raw tool arguments for ${toolCall.function.name}:`,
+                toolCall.function.arguments
+              );
+
+              // Parse arguments safely - only if it's valid JSON
+              let parameters = {};
+              if (toolCall.function.arguments) {
+                try {
+                  parameters = JSON.parse(toolCall.function.arguments);
+                  console.log(
+                    `✅ DEBUG: Parsed parameters:`,
+                    JSON.stringify(parameters, null, 2)
+                  );
+
+                  // 🔧 FIX: OpenAI sometimes adds colons to parameter names
+                  // Normalize parameter keys by removing trailing colons
+                  const normalizedParams = {};
+                  for (const [key, value] of Object.entries(parameters)) {
+                    const normalizedKey = key.endsWith(":") ? key.slice(0, -1) : key;
+                    normalizedParams[normalizedKey] = value;
+                  }
+                  parameters = normalizedParams;
+
+                  console.log(
+                    `🔧 DEBUG: Normalized parameters:`,
+                    JSON.stringify(parameters, null, 2)
+                  );
+                } catch (jsonError) {
+                  console.warn(
+                    `🛠️ Invalid JSON in tool arguments for ${toolCall.function.name}:`,
+                    toolCall.function.arguments
+                  );
+                  console.warn(`JSON Error:`, jsonError.message);
+                  parameters = {};
+                }
+              }
+
+              // Notify that tool is being called
+              await onToolCall({
+                id: toolCall.id,
+                name: toolCall.function.name,
+                parameters: parameters,
+              });
+            } catch (error) {
+              console.error(
+                `🛠️ Error processing tool call ${toolCall.function.name}:`,
+                error
+              );
+            }
+          }
+        }
+      }
+
+      // Complete the stream
+      const usage = {
+        prompt_tokens: Math.floor(totalTokens * 0.1),
+        completion_tokens: Math.floor(totalTokens * 0.9),
+        total_tokens: totalTokens,
+      };
+
+      const finalMessage = {
+        id: messageId,
+        type: "assistant",
+        content: fullContent,
+        tool_calls: toolCalls, // Include tool calls in response
+        provider: "openai",
+        model: model,
+        tokens: totalTokens,
+        cost: this.calculateOpenAICost(usage, model),
+        timestamp: new Date().toISOString(),
+      };
+
+      console.log(
+        `🛠️ STREAMING + TOOLS: OpenAI stream completed for message: ${messageId}`
+      );
+
+      if (onComplete) {
+        onComplete(finalMessage);
+      }
+
+      return finalMessage;
+    } catch (error) {
+      this.logger.error("OpenAI streaming API with tools failed:", error);
       throw error;
     }
   }
@@ -2136,6 +2653,218 @@ class AIClient {
       return finalMessage;
     } catch (error) {
       this.logger.error("Anthropic streaming API with system failed:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 🛠️ Anthropic Claude Streaming API with TOOL CALLING - PHASE 2B-3
+   * Streams text AND handles tool calls mid-stream for ultimate UX!
+   */
+  async callAnthropicStreamingAPIWithTools(
+    apiKey,
+    systemPrompt,
+    userPromptOrMessages,
+    tools,
+    options,
+    callbacks,
+    abortController = null
+  ) {
+    const model = options.model || this.providers.anthropic.defaultModel;
+    const maxTokens = options.maxTokens || 4000;
+    const messageId = options.messageId || Date.now().toString();
+
+    const { onChunk, onToolCall, onToolResult, onComplete } = callbacks;
+
+    // Build messages array
+    let messages;
+    if (typeof userPromptOrMessages === "string") {
+      messages = [{ role: "user", content: userPromptOrMessages }];
+    } else if (Array.isArray(userPromptOrMessages)) {
+      messages = userPromptOrMessages;
+    } else {
+      throw new Error("userPromptOrMessages must be a string or array");
+    }
+
+    try {
+      console.log(
+        `🛠️ STREAMING + TOOLS: Starting Claude stream with ${tools.length} tools for message: ${messageId}`
+      );
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: model,
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages: messages,
+          stream: true,
+          temperature: options.temperature || 0.7,
+          tools: tools, // 🛠️ TOOLS ENABLED!
+        }),
+        signal: abortController?.signal,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(
+          `Anthropic API error: ${response.status} ${response.statusText} - ${errorData}`
+        );
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = "";
+      let totalTokens = 0;
+      let toolUses = []; // Claude calls them "tool_use" blocks
+      let currentToolUse = null;
+
+      // Process streaming chunks with tool detection
+      while (true) {
+        if (abortController?.signal?.aborted) {
+          console.log(
+            `🛠️ STREAMING + TOOLS: Stream aborted for message: ${messageId}`
+          );
+          break;
+        }
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            if (data === "[DONE]") continue;
+
+            try {
+              const parsed = JSON.parse(data);
+
+              // Handle text content streaming
+              if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+                const chunkText = parsed.delta.text;
+                fullContent += chunkText;
+                totalTokens += 1;
+
+                if (onChunk) {
+                  onChunk({
+                    messageId: messageId,
+                    chunk: chunkText,
+                    tokens: totalTokens,
+                    isComplete: false,
+                  });
+                }
+              }
+
+              // Handle tool use blocks (Claude's tool calling format)
+              if (
+                parsed.type === "content_block_start" &&
+                parsed.content_block?.type === "tool_use"
+              ) {
+                currentToolUse = {
+                  id: parsed.content_block.id,
+                  name: parsed.content_block.name,
+                  input: "",
+                };
+              }
+
+              // Accumulate tool input
+              if (
+                parsed.type === "content_block_delta" &&
+                parsed.delta?.type === "input_json_delta"
+              ) {
+                if (currentToolUse) {
+                  currentToolUse.input += parsed.delta.partial_json;
+                }
+              }
+
+              // Complete tool use block
+              if (parsed.type === "content_block_stop" && currentToolUse) {
+                toolUses.push(currentToolUse);
+                currentToolUse = null;
+              }
+            } catch (e) {
+              // Ignore JSON parse errors for incomplete chunks
+            }
+          }
+        }
+      }
+
+      // Process tool uses if any were detected
+      if (toolUses.length > 0) {
+        console.log(
+          `🛠️ STREAMING + TOOLS: Detected ${toolUses.length} tool uses`
+        );
+
+        for (const toolUse of toolUses) {
+          if (onToolCall && toolUse.id && toolUse.name) {
+            try {
+              // Parse input safely - only if it's valid JSON
+              let parameters = {};
+              if (toolUse.input) {
+                try {
+                  parameters = JSON.parse(toolUse.input);
+                } catch (jsonError) {
+                  console.warn(
+                    `🛠️ Invalid JSON in tool input for ${toolUse.name}, using empty object:`,
+                    toolUse.input
+                  );
+                  parameters = {};
+                }
+              }
+
+              // Notify that tool is being called
+              await onToolCall({
+                id: toolUse.id,
+                name: toolUse.name,
+                parameters: parameters,
+              });
+            } catch (error) {
+              console.error(
+                `🛠️ Error processing tool use ${toolUse.name}:`,
+                error
+              );
+            }
+          }
+        }
+      }
+
+      // Complete the stream
+      const usage = {
+        input_tokens: Math.floor(totalTokens * 0.1),
+        output_tokens: Math.floor(totalTokens * 0.9),
+      };
+
+      const finalMessage = {
+        id: messageId,
+        type: "assistant",
+        content: fullContent,
+        tool_uses: toolUses, // Include tool uses in response
+        provider: "anthropic",
+        model: model,
+        tokens: totalTokens,
+        cost: this.calculateAnthropicCost(usage, model),
+        timestamp: new Date().toISOString(),
+      };
+
+      console.log(
+        `🛠️ STREAMING + TOOLS: Claude stream completed for message: ${messageId}`
+      );
+
+      if (onComplete) {
+        onComplete(finalMessage);
+      }
+
+      return finalMessage;
+    } catch (error) {
+      this.logger.error("Anthropic streaming API with tools failed:", error);
       throw error;
     }
   }

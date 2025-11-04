@@ -114,6 +114,110 @@ Team Setup Options:
 - Smart notifications without interruption
 - Customizable workflows and shortcuts
 
+### **7. PLUGIN ECOSYSTEM** (Future - Phase 3+)
+
+**Vision: Extensions Within Extensions**
+
+NOX will support a plugin system allowing developers to extend capabilities beyond core features.
+
+**Real-World Inspiration:**
+
+- **VS Code**: Extensions can contribute to other extensions (ESLint, Prettier)
+- **Webpack**: Core + community plugins
+- **Babel**: Core + transform plugins
+
+**Implementation Phases:**
+
+- **Phase 3**: Design plugin API and capability extension system
+- **Phase 4**: Implement plugin loader and registry
+- **Phase 5**: Build first official plugins (NOX-Docker, NOX-AWS)
+- **Phase 6**: Open to community developers
+
+**Example Plugins:**
+
+- **NOX-Docker**: Docker container management, image building, compose orchestration
+- **NOX-AWS**: AWS deployment, S3 operations, Lambda functions, CloudFormation
+- **NOX-Kubernetes**: K8s cluster management, deployment, service configuration
+- **NOX-Database**: PostgreSQL, MongoDB, Redis management and migrations
+- **NOX-Testing**: Advanced test generation, coverage analysis, mutation testing
+- **NOX-Security**: Security scanning, vulnerability detection, OWASP compliance
+
+**Benefits:**
+
+- ✅ **Extensibility**: Community can build specialized capabilities
+- ✅ **Modularity**: Core NOX stays lean, users install what they need
+- ✅ **Monetization**: Premium capability packs for specialized domains
+- ✅ **Ecosystem**: Build a marketplace like VS Code extensions
+
+**Technical Architecture:**
+
+```javascript
+// Plugin manifest (package.json)
+{
+  "name": "nox-docker",
+  "version": "1.0.0",
+  "noxPlugin": {
+    "capabilities": [
+      { "id": "docker_build", "name": "Docker Build", "category": "docker" },
+      { "id": "docker_run", "name": "Docker Run", "category": "docker" }
+    ]
+  }
+}
+
+// NOX loads plugins at startup
+// Users install via VS Code marketplace: "NOX Docker" → Install → Auto-loaded
+```
+
+### **8. HYBRID AI PROVIDER SUPPORT** (Phase 2B)
+
+**Vision: Maximum Compatibility with Best-in-Class Experience**
+
+NOX will support ALL AI providers with intelligent capability detection.
+
+**Hybrid Approach:**
+
+- **Tool Calling** (when available): OpenAI, Claude, Gemini → Highly reliable
+- **Text Parsing** (fallback): DeepSeek, Local models → Works but less reliable
+- **User Transparency**: Warnings about reliability for unsupported providers
+
+**Provider Support Matrix:**
+
+| Provider               | Tool Calling        | Structured Output | Reliability  | NOX Support |
+| ---------------------- | ------------------- | ----------------- | ------------ | ----------- |
+| **OpenAI GPT-4**       | ✅ Function Calling | ✅ JSON mode      | 🟢 Excellent | Full        |
+| **Claude (Anthropic)** | ✅ Tool Use         | ✅ JSON mode      | 🟢 Excellent | Full        |
+| **Gemini (Google)**    | ✅ Function Calling | ✅ JSON mode      | 🟡 Good      | Full        |
+| **DeepSeek**           | ⚠️ Limited          | ⚠️ Limited        | 🟡 Fair      | Fallback    |
+| **Local Models**       | ❌ Usually No       | ❌ Usually No     | 🔴 Poor      | Fallback    |
+
+**Implementation Priority:**
+
+- **Phase 2B-2**: Implement tool calling for OpenAI/Claude (most users)
+- **Phase 2B-3**: Add text parsing fallback for other providers
+- **Phase 2B-4**: Test with all providers, tune reliability
+
+**Benefits:**
+
+- ✅ **User Choice**: Let users use any provider they want
+- ✅ **Best Experience**: Reliable with OpenAI/Claude, works with others
+- ✅ **Future-Proof**: As providers add tool calling, they automatically improve
+- ✅ **Transparent**: Users know what to expect
+
+**User Experience:**
+
+```
+⚠️ Provider Compatibility Notice
+Your current AI provider (DeepSeek) does not support tool calling.
+NOX will use text parsing (less reliable) for Agent/Autonomous modes.
+
+For best results, use:
+- OpenAI GPT-4
+- Claude (Anthropic)
+- Gemini (Google)
+
+[Switch Provider] [Continue Anyway]
+```
+
 ---
 
 ## 💰 **REALISTIC REVENUE PROJECTIONS**
@@ -226,33 +330,98 @@ Format: NOX-XXXX-XXXX-XXXX-XXXX
 
 ## �🛣️ **DEVELOPMENT ROADMAP**
 
-### **Phase 1: Core AI Engine** (Months 1-2)
+### **Phase 1: Foundation** ✅ COMPLETE
 
-- [ ] Implement real `executeTask` with AI integration
-- [ ] Build codebase intelligence and context awareness
-- [ ] Create multi-file operations and refactoring
-- [ ] Implement web search and documentation lookup
+- [x] VS Code extension infrastructure
+- [x] Multi-AI provider support (OpenAI, Claude, DeepSeek, Gemini, Local)
+- [x] Aurora theming system (6 Northern Lights themes)
+- [x] Voice input in 21 languages (OpenAI, Google, Azure, Vosk)
+- [x] Streaming responses with cost tracking
+- [x] Persistent chat history
+- [x] Settings panel and performance dashboard
 
-### **Phase 2: Advanced Features** (Months 3-4)
+### **Phase 2A: NOX Consciousness** ✅ COMPLETE
 
-- [ ] Add autonomous code generation capabilities
-- [ ] Implement Git operations and deployment tools
-- [ ] Build local knowledge base and team sharing
-- [ ] Create enterprise packaging and licensing
+- [x] NOX system prompt with personality and capabilities
+- [x] Context builder for codebase awareness
+- [x] Capability executor framework
+- [x] File operations (create, edit, delete)
+- [x] Terminal manager
+- [x] Git operations
 
-### **Phase 3: Polish & Launch** (Months 5-6)
+### **Phase 2B: Real AI Coding Capabilities** 🔄 IN PROGRESS
 
-- [ ] Optimize performance for large codebases
+**Phase 2B-1: Foundation - 3-Mode System** ✅ COMPLETE
+
+- [x] NoxModeManager (Assistant/Agent/Autonomous modes)
+- [x] CapabilityBase abstract class
+- [x] CapabilityRegistry for capability management
+- [x] NoxTaskPlanner for multi-step task execution
+- [x] FileReadCapability and FileCreateCapability examples
+- [x] Integration with agentController
+
+**Phase 2B-2: Tool Calling Implementation** 🔄 CURRENT
+
+- [ ] Implement OpenAI function calling
+- [ ] Implement Claude tool use
+- [ ] Implement Gemini function calling
+- [ ] Build tool definition generator from capabilities
+- [ ] Test with real user requests
+
+**Phase 2B-3: Core Capabilities**
+
+- [ ] FileEditCapability (edit existing files)
+- [ ] FileDeleteCapability (delete files with safety)
+- [ ] TerminalCommandCapability (run terminal commands)
+- [ ] GitCommitCapability (commit changes)
+- [ ] GitPushCapability (push to remote)
+- [ ] WebSearchCapability (search the web)
+- [ ] CodeAnalysisCapability (analyze code)
+
+**Phase 2B-4: Text Parsing Fallback**
+
+- [ ] Implement text parsing for providers without tool calling
+- [ ] Add warning system for unsupported providers
+- [ ] Test with DeepSeek and local models
+
+**Phase 2B-5: Audit System**
+
+- [ ] Implement SQLite audit log
+- [ ] Add CSV export functionality
+- [ ] Add JSON export functionality
+- [ ] Design webhook system (implement in Phase 3)
+
+**Phase 2B-6: Settings UI**
+
+- [ ] Mode selector (Assistant/Agent/Autonomous)
+- [ ] Autonomous restrictions configuration
+- [ ] Approval granularity settings
+- [ ] Rollback button in chat UI
+
+### **Phase 3: Plugin Ecosystem & Advanced Features** (Future)
+
+- [ ] Design plugin API and capability extension system
+- [ ] Implement plugin loader and registry
+- [ ] Build first official plugins (NOX-Docker, NOX-AWS)
+- [ ] Implement webhook system for audit events
+- [ ] Add advanced codebase intelligence
+- [ ] Implement local knowledge base
+
+### **Phase 4: Polish & Launch** (Future)
+
+- [ ] Optimize performance for large codebases (100K+ files)
 - [ ] Complete cross-platform packaging (Windows, macOS, Linux)
 - [ ] Build marketing website and sales funnel
+- [ ] Implement licensing system (Stripe + Firebase)
 - [ ] Launch on your website and VS Code marketplace
 
-### **Phase 4: Growth & Enterprise** (Months 7-12)
+### **Phase 5: Growth & Enterprise** (Future)
 
 - [ ] Add enterprise features and bulk licensing
 - [ ] Build partner relationships and reseller network
+- [ ] Open plugin ecosystem to community developers
 - [ ] Implement advanced AI models and specializations
-- [ ] Scale to support growing user base
+- [ ] Scale to support growing user base (1M+ users)
 
 ---
 
@@ -276,14 +445,28 @@ Format: NOX-XXXX-XXXX-XXXX-XXXX
 
 ## 📋 **CURRENT STATUS**
 
-- ✅ **Foundation Complete**: VS Code extension infrastructure
-- ✅ **Voice Features**: 21-language voice-to-text implementation
-- ✅ **Aurora Theming**: 6+ professional themes
-- ✅ **Chat Interface**: Multi-AI provider support with cost tracking
-- ✅ **Enterprise Infrastructure**: Logging, monitoring, audit trails
-- 🔄 **Next**: Implement core AI coding capabilities
+- ✅ **Phase 1 Complete**: VS Code extension infrastructure
+- ✅ **Phase 2A Complete**: NOX consciousness and capability framework
+- ✅ **Phase 2B-1 Complete**: 3-mode system architecture (Assistant/Agent/Autonomous)
+- 🔄 **Phase 2B-2 In Progress**: Tool calling implementation for OpenAI/Claude
+- 🎯 **Next**: Build core capabilities and test end-to-end
+
+**Recent Achievements:**
+
+- ✅ NoxModeManager with 3 operational modes
+- ✅ CapabilityBase and CapabilityRegistry
+- ✅ NoxTaskPlanner for multi-step execution
+- ✅ Rollback support and error recovery
+- ✅ Risk-based approval strategies
+
+**Immediate Goals:**
+
+- 🎯 Implement tool calling for OpenAI/Claude
+- 🎯 Build FileEdit, FileDelete, Terminal, Git capabilities
+- 🎯 Test Agent mode end-to-end
+- 🎯 Implement audit logging system
 
 ---
 
-_Last Updated: 2025-10-24_
-_Status: Master Plan Approved - Ready for Implementation_
+_Last Updated: 2025-11-03_
+_Status: Phase 2B-2 In Progress - Tool Calling Implementation_

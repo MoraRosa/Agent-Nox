@@ -1456,3 +1456,234 @@ body {
   content: "⬇️";
   margin-right: 6px;
 }
+
+/* 🛠️ PHASE 2B-3: Tool Status & Approval UI */
+
+/* Tool Status Container */
+.tool-status-container {
+  margin: 12px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Tool Status Display */
+.tool-status {
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-left: 3px solid var(--aurora-blue);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.tool-status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-left: 3px solid var(--aurora-blue);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: opacity 1s ease;
+}
+
+.tool-status-item.starting {
+  border-left-color: var(--aurora-blue);
+  animation: toolPulse 1.5s ease-in-out infinite;
+}
+
+.tool-status-item.executing {
+  border-left-color: var(--aurora-purple);
+  animation: toolPulse 1.5s ease-in-out infinite;
+}
+
+.tool-status-item.success {
+  border-left-color: var(--aurora-green);
+  color: var(--aurora-green);
+  animation: none;
+}
+
+.tool-status-item.error {
+  border-left-color: #ff6b6b;
+  color: #ff6b6b;
+  animation: none;
+}
+
+.tool-status-item.denied {
+  border-left-color: #ffa500;
+  color: #ffa500;
+  animation: none;
+}
+
+@keyframes toolPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.tool-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.tool-message {
+  flex: 1;
+}
+
+/* Tool Approval Request */
+.tool-approval-request {
+  margin: 12px 0;
+  padding: 16px;
+  background: var(--bg-surface);
+  border: 2px solid var(--aurora-blue);
+  border-radius: 8px;
+  animation: approvalPulse 2s ease-in-out infinite;
+}
+
+@keyframes approvalPulse {
+  0%,
+  100% {
+    border-color: var(--aurora-blue);
+    box-shadow: 0 0 10px rgba(76, 154, 255, 0.3);
+  }
+  50% {
+    border-color: var(--aurora-purple);
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+  }
+}
+
+.approval-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: var(--aurora-blue);
+}
+
+.approval-icon {
+  font-size: 20px;
+}
+
+.approval-title {
+  font-size: 14px;
+}
+
+.approval-details {
+  margin-bottom: 12px;
+}
+
+.approval-capability {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.risk-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.risk-badge.risk-low {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--aurora-green);
+}
+
+.risk-badge.risk-medium {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fbbf24;
+}
+
+.risk-badge.risk-high {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.approval-description {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.approval-parameters {
+  background: var(--bg-tertiary);
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 8px;
+}
+
+.approval-parameters strong {
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.approval-parameters pre {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: "Courier New", monospace;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.approval-btn {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.approve-btn {
+  background: var(--aurora-green);
+  color: var(--bg-primary);
+}
+
+.approve-btn:hover {
+  background: #22c55e;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+}
+
+.deny-btn {
+  background: #ef4444;
+  color: white;
+}
+
+.deny-btn:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.details-btn {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.details-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--aurora-blue);
+}

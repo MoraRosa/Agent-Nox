@@ -45,6 +45,12 @@ class NoxChatViewProvider {
     );
     this.webviewView = webviewView;
 
+    // 🔗 PHASE 2B-3: Set webview reference in agentController for streaming tool handler
+    if (this.agentController && this.agentController.setWebviewView) {
+      this.agentController.setWebviewView(webviewView);
+      this.logger.info("🛠️ Webview reference set in agentController");
+    }
+
     // Configure webview
     webviewView.webview.options = {
       enableScripts: true,
@@ -202,6 +208,20 @@ class NoxChatViewProvider {
               type: "themeChanged",
               theme: message.theme,
             });
+            break;
+
+          case "toolApprovalResponse":
+            // 🛠️ PHASE 2B-3: Handle tool approval response from user
+            this.logger.info(
+              `🛠️ Tool approval response: ${
+                message.approved ? "APPROVED" : "DENIED"
+              }`
+            );
+            await this.handleToolApprovalResponse(
+              message.messageId,
+              message.toolId,
+              message.approved
+            );
             break;
 
           default:
@@ -873,6 +893,32 @@ class NoxChatViewProvider {
     }
 
     return false;
+  }
+
+  /**
+   * 🛠️ PHASE 2B-3: Handle tool approval response from user
+   */
+  async handleToolApprovalResponse(messageId, toolId, approved) {
+    try {
+      this.logger.info(
+        `🛠️ Tool approval response: messageId=${messageId}, toolId=${toolId}, approved=${approved}`
+      );
+
+      // Forward approval response to agentController's streaming tool handler
+      if (this.agentController && this.agentController.streamingToolHandler) {
+        this.agentController.streamingToolHandler.handleApprovalResponse(
+          messageId,
+          toolId,
+          approved
+        );
+      } else {
+        this.logger.error(
+          "🛠️ StreamingToolHandler not available in agentController"
+        );
+      }
+    } catch (error) {
+      this.logger.error("Error handling tool approval response:", error);
+    }
   }
 
   /**

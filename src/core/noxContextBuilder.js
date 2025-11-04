@@ -223,7 +223,7 @@ class NoxContextBuilder {
   /**
    * 📄 Get active file context
    */
-  async getActiveFileContext(parameters) {
+  async getActiveFileContext(parameters = {}) {
     try {
       const editor = vscode.window.activeTextEditor;
       const context = {
@@ -257,13 +257,13 @@ class NoxContextBuilder {
       }
 
       // Override with parameters if provided (for command-based tasks)
-      if (parameters.fileName) {
+      if (parameters && parameters.fileName) {
         context.activeFile = parameters.fileName;
       }
-      if (parameters.code) {
+      if (parameters && parameters.code) {
         context.selectedText = parameters.code;
       }
-      if (parameters.language) {
+      if (parameters && parameters.language) {
         context.activeLanguage = parameters.language;
       }
 
