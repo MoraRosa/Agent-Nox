@@ -247,6 +247,11 @@
           ],
           "description": "🦊 Primary AI provider for Nox"
         },
+        "nox.aiModel": {
+          "type": "string",
+          "default": "",
+          "description": "🧠 Selected AI model (persisted across sessions)"
+        },
         "nox.anthropic.apiKey": {
           "type": "string",
           "default": "",

@@ -700,35 +700,18 @@ class AgentController {
       model: this.aiClient.currentModel,
     };
 
-    switch (currentProvider) {
-      case "openai":
-        response = await this.aiClient.callOpenAIAPIWithTools(
-          apiKey,
-          systemPrompt,
-          messages,
-          tools,
-          requestOptions
-        );
-        break;
+    // NOTE: This is the old non-streaming tool calling path
+    // The current implementation uses streaming (handleStreamingMessage)
+    // For now, fallback to regular request
+    this.logger.warn(
+      "⚠️ Non-streaming tool calling is deprecated. Use streaming path instead."
+    );
 
-      case "anthropic":
-        response = await this.aiClient.callAnthropicAPIWithTools(
-          apiKey,
-          systemPrompt,
-          messages,
-          tools,
-          requestOptions
-        );
-        break;
-
-      default:
-        // Fallback to regular call
-        response = await this.aiClient.sendRequestWithSystem(
-          systemPrompt,
-          messages,
-          requestOptions
-        );
-    }
+    response = await this.aiClient.sendRequestWithSystem(
+      systemPrompt,
+      messages[messages.length - 1]?.content || "",
+      requestOptions
+    );
 
     // Parse tool calls from response
     if (response.tool_calls && response.tool_calls.length > 0) {
@@ -807,6 +790,21 @@ class AgentController {
         currentProvider
       );
 
+      // 🔧 OPTION C PHASE 1: Track tool results for summary generation
+      const toolResults = [];
+
+      // 🎯 ENTERPRISE OPTIMIZATION: Detect if user is requesting an action
+      const userMessage =
+        messages[messages.length - 1]?.content?.toLowerCase() || "";
+      const isActionRequest = this.detectActionIntent(userMessage);
+
+      // If user clearly wants an action, force tool calling
+      const toolChoice = isActionRequest ? "required" : "auto";
+
+      this.logger.info(
+        `🎯 Action intent detected: ${isActionRequest}, tool_choice: ${toolChoice}`
+      );
+
       // Send streaming request with tools
       await this.aiClient.sendStreamingRequestWithTools(
         systemPrompt,
@@ -816,6 +814,7 @@ class AgentController {
           maxTokens: parameters.maxTokens || 4000,
           temperature: parameters.temperature || 0.7,
           messageId: parameters.messageId,
+          tool_choice: toolChoice, // 🎯 Force tool calling for action requests
         },
         {
           onChunk: onChunk,
@@ -825,10 +824,44 @@ class AgentController {
               toolCall,
               parameters.messageId
             );
+
+            // Store result for potential summary generation
+            toolResults.push({
+              toolCall: toolCall,
+              result: result,
+            });
+
             return result;
           },
           onToolResult: null, // Not needed for now
-          onComplete: onComplete,
+          onComplete: async (finalMessage) => {
+            // 🔧 OPTION C PHASE 1: Check if OpenAI was silent
+            if (finalMessage.wasSilent && toolResults.length > 0) {
+              this.logger.info(
+                `🗣️ CONVERSATIONAL WRAPPER: OpenAI was silent (0 tokens), generating summary...`
+              );
+
+              // Generate a conversational summary of what happened
+              const summaryText = await this.generateToolSummary(
+                toolResults,
+                parameters.messageId,
+                onChunk
+              );
+
+              // 🔧 FIX: Update finalMessage with summary content so it persists in UI
+              if (summaryText) {
+                finalMessage.content = summaryText;
+                finalMessage.tokens = Math.ceil(
+                  summaryText.split(" ").length * 1.3
+                ); // Estimate tokens
+              }
+            }
+
+            // Call original onComplete
+            if (onComplete) {
+              onComplete(finalMessage);
+            }
+          },
         },
         abortController
       );
@@ -850,6 +883,159 @@ class AgentController {
         onComplete,
         abortController
       );
+    }
+  }
+
+  /**
+   * 🎯 ENTERPRISE OPTIMIZATION: Detect if user message is requesting an action
+   * Returns true if message contains action keywords that should trigger tool calling
+   */
+  detectActionIntent(userMessage) {
+    // Action keywords that indicate user wants to execute a tool
+    const actionKeywords = [
+      // File creation
+      "create",
+      "make",
+      "generate",
+      "add",
+      "new",
+      // File reading
+      "read",
+      "show",
+      "open",
+      "display",
+      "view",
+      "see",
+      // File editing
+      "edit",
+      "modify",
+      "update",
+      "change",
+      "fix",
+      "refactor",
+      // File deletion
+      "delete",
+      "remove",
+      "erase",
+      // General action verbs
+      "write",
+      "build",
+      "implement",
+    ];
+
+    // File-related keywords that strengthen action intent
+    const fileKeywords = [
+      "file",
+      "files",
+      ".js",
+      ".ts",
+      ".py",
+      ".java",
+      ".cpp",
+      ".html",
+      ".css",
+    ];
+
+    // Check if message contains action keywords
+    const hasActionKeyword = actionKeywords.some((keyword) =>
+      userMessage.includes(keyword)
+    );
+
+    // Check if message contains file-related keywords
+    const hasFileKeyword = fileKeywords.some((keyword) =>
+      userMessage.includes(keyword)
+    );
+
+    // Strong action intent: has action keyword AND file keyword
+    // Example: "create a file called test.js"
+    return hasActionKeyword && hasFileKeyword;
+  }
+
+  /**
+   * 🗣️ OPTION C PHASE 1: Generate conversational summary for silent tool execution
+   * When OpenAI executes tools without streaming any text, we ask it to explain what happened
+   * @returns {Promise<string>} The summary text
+   */
+  async generateToolSummary(toolResults, messageId, onChunk) {
+    try {
+      this.logger.info(
+        `🗣️ Generating conversational summary for ${toolResults.length} tool executions`
+      );
+
+      // Build a summary prompt describing what tools were executed
+      const toolDescriptions = toolResults
+        .map((tr, idx) => {
+          const { toolCall, result } = tr;
+          const success = result.success ? "✅ succeeded" : "❌ failed";
+          return `${idx + 1}. ${toolCall.name} ${success}${
+            result.error ? ` (${result.error})` : ""
+          }`;
+        })
+        .join("\n");
+
+      const summaryPrompt = `You just executed the following tools:
+
+${toolDescriptions}
+
+Please provide a brief, friendly summary of what you did for the user. Be conversational and helpful. Keep it under 2 sentences.`;
+
+      // Make a quick non-streaming request for the summary
+      let summaryText = "";
+
+      try {
+        const response = await this.aiClient.sendRequestWithSystem(
+          "You are a helpful assistant. Provide a brief, conversational summary.",
+          summaryPrompt,
+          {
+            maxTokens: 150,
+            temperature: 0.7,
+          }
+        );
+        summaryText = response.content || "Tools executed successfully! ✅";
+      } catch (error) {
+        this.logger.warn(
+          "Failed to generate tool summary, using fallback:",
+          error
+        );
+        summaryText = "Tools executed successfully! ✅";
+      }
+
+      // Stream the summary to the user as if it came from the original response
+      this.logger.info(`🗣️ Streaming generated summary: ${summaryText}`);
+
+      // Split into words and stream them
+      const words = summaryText.split(" ");
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i] + (i < words.length - 1 ? " " : "");
+        if (onChunk) {
+          onChunk({
+            messageId: messageId,
+            chunk: word,
+            tokens: 1,
+            isComplete: i === words.length - 1,
+          });
+        }
+        // Small delay to simulate streaming
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      }
+
+      this.logger.info(`🗣️ Summary generation complete`);
+
+      // 🔧 FIX: Return the summary text so it can be stored in finalMessage
+      return summaryText;
+    } catch (error) {
+      this.logger.error("Failed to generate tool summary:", error);
+      // Fallback: send a simple success message
+      const fallbackText = "Done! ✅";
+      if (onChunk) {
+        onChunk({
+          messageId: messageId,
+          chunk: fallbackText,
+          tokens: 1,
+          isComplete: true,
+        });
+      }
+      return fallbackText;
     }
   }
 
