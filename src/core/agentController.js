@@ -16,6 +16,10 @@ const {
   getCapabilityRegistry,
 } = require("./capabilities");
 
+// StreamBuffer class removed - batching now happens in webview StreamingBuffer
+// This follows industry standard: backend sends tokens immediately,
+// frontend handles character-by-character display + progressive markdown
+
 /**
  * Main Agent Controller - orchestrates all agent operations with enterprise-grade architecture
  */

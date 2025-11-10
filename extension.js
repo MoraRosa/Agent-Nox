@@ -390,6 +390,24 @@ class NoxExtension {
             case "getVoiceStatus":
               await this.sendVoiceStatus(panel.webview);
               break;
+            case "getStreamingPreferences":
+              try {
+                const config = vscode.workspace.getConfiguration("nox");
+                const streamingEnabled = config.get("streamingEnabled", true);
+                const streamingSpeed = config.get("streamingSpeed", "slow");
+
+                panel.webview.postMessage({
+                  type: "streamingPreferences",
+                  streamingEnabled,
+                  streamingSpeed,
+                });
+              } catch (error) {
+                this.logger.error(
+                  "Failed to get streaming preferences:",
+                  error
+                );
+              }
+              break;
             case "setVoiceSettings":
               await this.setVoiceSettings(message.settings);
               await this.sendVoiceStatus(panel.webview);
@@ -479,6 +497,29 @@ class NoxExtension {
                   );
                 }
 
+                // 🔄 STREAMING PREFERENCES: Notify chat sidebar when streaming settings change
+                if (
+                  message.key === "streamingEnabled" ||
+                  message.key === "streamingSpeed"
+                ) {
+                  if (
+                    this.chatSidebarProvider &&
+                    this.chatSidebarProvider.webviewView
+                  ) {
+                    this.chatSidebarProvider.webviewView.webview.postMessage({
+                      type: "streamingPreferences",
+                      streamingEnabled:
+                        message.key === "streamingEnabled"
+                          ? message.value
+                          : config.get("streamingEnabled", true),
+                      streamingSpeed:
+                        message.key === "streamingSpeed"
+                          ? message.value
+                          : config.get("streamingSpeed", "slow"),
+                    });
+                  }
+                }
+
                 panel.webview.postMessage({
                   type: "preferenceUpdated",
                   key: message.key,
@@ -500,11 +541,19 @@ class NoxExtension {
                 const config = vscode.workspace.getConfiguration("nox");
                 const debugMode = config.get("debugMode", false);
                 const logLevel = config.get("logLevel", "info");
+                const streamingEnabled = config.get("streamingEnabled", true);
+                const streamingSpeed = config.get("streamingSpeed", "slow");
+                const defaultAIMode = config.get("defaultAIMode", "assistant");
+                const allowPerChatMode = config.get("allowPerChatMode", true);
 
                 panel.webview.postMessage({
                   type: "preferencesData",
                   debugMode,
                   logLevel,
+                  streamingEnabled,
+                  streamingSpeed,
+                  defaultAIMode,
+                  allowPerChatMode,
                 });
               } catch (error) {
                 this.logger.error("Failed to get preferences:", error);
@@ -1024,6 +1073,64 @@ class NoxExtension {
                     <p>Customize Nox behavior and debugging options.</p>
 
                     <div class="provider-grid">
+                        <!-- AI Behavior Settings -->
+                        <div class="provider-card">
+                            <h3>🤖 AI Behavior</h3>
+                            <p>Configure how Nox AI interacts with you and your code.</p>
+                            <div style="margin: 16px 0;">
+                                <label style="display: block; margin-bottom: 8px; color: #a0a9c0; font-size: 13px;">Default AI Mode</label>
+                                <select id="defaultAIModeSelect" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; color: inherit; font-size: 14px;">
+                                    <option value="assistant">👥 Assistant - Collaborative (approval per action)</option>
+                                    <option value="agent">🤖 Agent - Semi-autonomous (approval per plan)</option>
+                                    <option value="arctic">🦊 Arctic - Full autonomy (minimal approval)</option>
+                                </select>
+                                <small style="color: #a0a9c0; display: block; margin-top: 8px;">
+                                    Choose the default mode for new chat sessions. You can override this per chat.
+                                </small>
+                            </div>
+                            <div style="margin: 16px 0;">
+                                <label class="debug-toggle-switch">
+                                    <input type="checkbox" id="allowPerChatModeToggle" class="debug-mode-checkbox" checked>
+                                    <div class="toggle-switch"></div>
+                                    <span style="cursor: pointer; user-select: none;">Allow per-chat mode selection</span>
+                                </label>
+                                <small style="color: #a0a9c0; display: block; margin-top: 12px;">
+                                    When enabled, you can choose different AI modes for each chat session.
+                                </small>
+                            </div>
+                        </div>
+
+                        <!-- Streaming Settings -->
+                        <div class="provider-card">
+                            <h3>💬 Streaming</h3>
+                            <p>Configure how AI responses are displayed in real-time.</p>
+                            <div style="margin: 16px 0;">
+                                <label class="debug-toggle-switch">
+                                    <input type="checkbox" id="streamingEnabledToggle" class="debug-mode-checkbox" checked>
+                                    <div class="toggle-switch"></div>
+                                    <span style="cursor: pointer; user-select: none;">Enable streaming</span>
+                                </label>
+                                <small style="color: #a0a9c0; display: block; margin-top: 12px;">
+                                    Show AI responses character-by-character as they're generated.
+                                </small>
+                            </div>
+                            <div style="margin: 16px 0;">
+                                <label style="display: block; margin-bottom: 8px; color: #a0a9c0; font-size: 13px;">Streaming Speed</label>
+                                <select id="streamingSpeedSelect" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; color: inherit; font-size: 14px;">
+                                    <option value="snail">🐌 Snail - Very very slow (maximum readability)</option>
+                                    <option value="tortoise">🐢 Tortoise - Very slow (dyslexia-friendly)</option>
+                                    <option value="slow" selected>🚶 Slow - Comfortable reading speed</option>
+                                    <option value="medium">🏃 Medium - Default speed</option>
+                                    <option value="fast">⚡ Fast - Quick readers</option>
+                                    <option value="instant">🚀 Instant - No streaming animation</option>
+                                </select>
+                                <small style="color: #a0a9c0; display: block; margin-top: 8px;">
+                                    Adjust the speed at which text appears. Slower speeds are better for readability.
+                                </small>
+                            </div>
+                        </div>
+
+                        <!-- Debug Mode -->
                         <div class="provider-card">
                             <h3>🐛 Debug Mode</h3>
                             <p>Enable detailed logging for troubleshooting. Shows per-chunk streaming logs and diagnostic information.</p>
@@ -1039,11 +1146,12 @@ class NoxExtension {
                             </div>
                         </div>
 
+                        <!-- Log Level -->
                         <div class="provider-card">
                             <h3>📝 Log Level</h3>
                             <p>Set the minimum log level to display in the output channel.</p>
                             <div style="margin: 16px 0;">
-                                <select id="logLevelSelect">
+                                <select id="logLevelSelect" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; color: inherit; font-size: 14px;">
                                     <option value="debug">🐛 Debug - Show all logs</option>
                                     <option value="info" selected>ℹ️ Info - Show info and above</option>
                                     <option value="warn">⚠️ Warn - Show warnings and above</option>
@@ -1055,11 +1163,15 @@ class NoxExtension {
                             </div>
                         </div>
 
+                        <!-- Preferences Info -->
                         <div class="provider-card">
                             <h3>💾 Preferences Info</h3>
                             <p>Preferences are stored locally in VS Code settings.</p>
                             <div style="margin: 16px 0; padding: 12px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; border-left: 3px solid #64b5f6;">
                                 <small style="color: #a0a9c0;">
+                                    <strong>AI Mode:</strong> nox.defaultAIMode<br>
+                                    <strong>Streaming:</strong> nox.streamingEnabled<br>
+                                    <strong>Streaming Speed:</strong> nox.streamingSpeed<br>
                                     <strong>Debug Mode:</strong> nox.debugMode<br>
                                     <strong>Log Level:</strong> nox.logLevel<br><br>
                                     These settings sync across all your VS Code workspaces.
@@ -2164,6 +2276,10 @@ class NoxExtension {
             function setupPreferencesEventListeners() {
                 const debugModeToggle = document.getElementById('debugModeToggle');
                 const logLevelSelect = document.getElementById('logLevelSelect');
+                const streamingEnabledToggle = document.getElementById('streamingEnabledToggle');
+                const streamingSpeedSelect = document.getElementById('streamingSpeedSelect');
+                const defaultAIModeSelect = document.getElementById('defaultAIModeSelect');
+                const allowPerChatModeToggle = document.getElementById('allowPerChatModeToggle');
 
                 if (debugModeToggle) {
                     debugModeToggle.addEventListener('change', (e) => {
@@ -2181,6 +2297,46 @@ class NoxExtension {
                             type: 'updatePreference',
                             key: 'logLevel',
                             value: e.target.value
+                        });
+                    });
+                }
+
+                if (streamingEnabledToggle) {
+                    streamingEnabledToggle.addEventListener('change', (e) => {
+                        vscode.postMessage({
+                            type: 'updatePreference',
+                            key: 'streamingEnabled',
+                            value: e.target.checked
+                        });
+                    });
+                }
+
+                if (streamingSpeedSelect) {
+                    streamingSpeedSelect.addEventListener('change', (e) => {
+                        vscode.postMessage({
+                            type: 'updatePreference',
+                            key: 'streamingSpeed',
+                            value: e.target.value
+                        });
+                    });
+                }
+
+                if (defaultAIModeSelect) {
+                    defaultAIModeSelect.addEventListener('change', (e) => {
+                        vscode.postMessage({
+                            type: 'updatePreference',
+                            key: 'defaultAIMode',
+                            value: e.target.value
+                        });
+                    });
+                }
+
+                if (allowPerChatModeToggle) {
+                    allowPerChatModeToggle.addEventListener('change', (e) => {
+                        vscode.postMessage({
+                            type: 'updatePreference',
+                            key: 'allowPerChatMode',
+                            value: e.target.checked
                         });
                     });
                 }
@@ -2241,12 +2397,28 @@ class NoxExtension {
                     // Update preferences UI with data from extension
                     const debugModeToggle = document.getElementById('debugModeToggle');
                     const logLevelSelect = document.getElementById('logLevelSelect');
+                    const streamingEnabledToggle = document.getElementById('streamingEnabledToggle');
+                    const streamingSpeedSelect = document.getElementById('streamingSpeedSelect');
+                    const defaultAIModeSelect = document.getElementById('defaultAIModeSelect');
+                    const allowPerChatModeToggle = document.getElementById('allowPerChatModeToggle');
 
                     if (debugModeToggle) {
                         debugModeToggle.checked = message.debugMode;
                     }
                     if (logLevelSelect) {
                         logLevelSelect.value = message.logLevel;
+                    }
+                    if (streamingEnabledToggle) {
+                        streamingEnabledToggle.checked = message.streamingEnabled;
+                    }
+                    if (streamingSpeedSelect) {
+                        streamingSpeedSelect.value = message.streamingSpeed;
+                    }
+                    if (defaultAIModeSelect) {
+                        defaultAIModeSelect.value = message.defaultAIMode;
+                    }
+                    if (allowPerChatModeToggle) {
+                        allowPerChatModeToggle.checked = message.allowPerChatMode;
                     }
                 } else if (message.type === 'preferenceUpdated') {
                     // Preference was successfully updated

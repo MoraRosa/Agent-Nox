@@ -59,14 +59,20 @@ class NoxChatApp {
     providerControls?: HTMLElement;
     sessionCost?: HTMLElement;
     sessionTokens?: HTMLElement;
-    streamingToggle?: HTMLInputElement;
   } = {};
+
+  // Streaming preferences (loaded from settings)
+  private streamingEnabled: boolean = true;
+  private streamingSpeed: string = 'slow';
 
   // Speech Recognition properties
   private speechRecognition: any = null;
   private isRecording: boolean = false;
   private speechSupported: boolean = false;
   private permissionState: 'unknown' | 'granted' | 'denied' = 'unknown';
+
+  // 🚀 MICRO-BATCHING: Accumulate chunks for smoother streaming
+  private chunkBatchBuffer: Map<string, { chunks: string[], tokens: number, timer: any }> = new Map();
 
   constructor() {
     this.vscode = acquireVsCodeApi();
@@ -135,7 +141,6 @@ class NoxChatApp {
     this.elements.voiceError = document.getElementById('voiceError') as HTMLElement;
     this.elements.sessionCost = document.getElementById('sessionCost') as HTMLElement;
     this.elements.sessionTokens = document.getElementById('sessionTokens') as HTMLElement;
-    this.elements.streamingToggle = document.getElementById('streamingToggle') as HTMLInputElement;
 
     // 🔧 FIX: Disable UI until extension is fully initialized
     this.setUIEnabled(false);
@@ -158,6 +163,7 @@ class NoxChatApp {
     // Request initial data from extension
     this.sendMessage({ type: 'ready' });
     this.sendMessage({ type: 'getVoiceStatus' });
+    this.sendMessage({ type: 'getStreamingPreferences' });
 
     // 🔧 DEBUG: Confirm ready message sent
     console.log('✅ [WEBVIEW] Ready message sent, UI setup complete');
@@ -483,13 +489,11 @@ class NoxChatApp {
       return;
     }
 
-    // Check if streaming is enabled
-    const isStreamingEnabled = this.elements.streamingToggle?.checked ?? true;
+    // Check if streaming is enabled (from settings preference)
+    console.log(`🌊 Sending message with streaming: ${this.streamingEnabled}`);
 
-    console.log(`🌊 Sending message with streaming: ${isStreamingEnabled}`);
-
-    // Send to extension (streaming or regular based on toggle)
-    const request = isStreamingEnabled
+    // Send to extension (streaming or regular based on preference)
+    const request = this.streamingEnabled
       ? { type: 'sendStreamingMessage', content: message } as SendStreamingMessageRequest
       : { type: 'sendMessage', content: message } as SendMessageRequest;
 
@@ -584,7 +588,7 @@ class NoxChatApp {
         break;
 
       case 'streamChunk':
-        this.updateStreamingMessage(message.messageId, message.chunk, message.tokens);
+        this.batchStreamChunk(message.messageId, message.chunk, message.tokens);
         break;
 
       case 'streamComplete':
@@ -632,6 +636,11 @@ class NoxChatApp {
         console.log('🐛 Debug mode updated:', this.debugMode);
         break;
 
+      case 'streamingPreferences':
+        // Apply streaming preferences
+        this.applyStreamingPreferences(message.streamingEnabled, message.streamingSpeed);
+        break;
+
       case 'info':
         // Info message from extension (e.g., debug mode change notification)
         console.log('ℹ️', message.message);
@@ -640,6 +649,22 @@ class NoxChatApp {
       default:
         console.warn('Unknown message type:', message.type);
     }
+  }
+
+  /**
+   * 💬 Apply streaming preferences from settings
+   */
+  private applyStreamingPreferences(enabled: boolean, speed: string): void {
+    console.log(`💬 Applying streaming preferences: enabled=${enabled}, speed=${speed}`);
+
+    // Store preferences
+    this.streamingEnabled = enabled;
+    this.streamingSpeed = speed;
+
+    // Apply speed to StreamingMessageComponent
+    StreamingMessageComponent.setGlobalSpeed(speed as any);
+
+    console.log(`✅ Streaming preferences applied: enabled=${this.streamingEnabled}, speed=${this.streamingSpeed}`);
   }
 
   /**
@@ -1590,6 +1615,43 @@ class NoxChatApp {
   }
 
   /**
+   * 🚀 MICRO-BATCHING: Batch incoming chunks for smoother streaming
+   * Accumulates chunks for 50ms before flushing to StreamingBuffer
+   */
+  private batchStreamChunk(messageId: string, chunk: string, tokens?: number): void {
+    // Get or create batch buffer for this message
+    let batch = this.chunkBatchBuffer.get(messageId);
+    if (!batch) {
+      batch = { chunks: [], tokens: 0, timer: null };
+      this.chunkBatchBuffer.set(messageId, batch);
+    }
+
+    // Add chunk to batch
+    batch.chunks.push(chunk);
+    if (tokens) {
+      batch.tokens += tokens;
+    }
+
+    // Clear existing timer
+    if (batch.timer) {
+      clearTimeout(batch.timer);
+    }
+
+    // Schedule flush after 50ms (micro-batch)
+    batch.timer = setTimeout(() => {
+      const batchData = this.chunkBatchBuffer.get(messageId);
+      if (batchData && batchData.chunks.length > 0) {
+        // Combine all chunks and flush
+        const combinedChunk = batchData.chunks.join('');
+        this.updateStreamingMessage(messageId, combinedChunk, batchData.tokens);
+
+        // Clear batch
+        this.chunkBatchBuffer.delete(messageId);
+      }
+    }, 50); // 50ms micro-batch window
+  }
+
+  /**
    * 🌊 Update streaming message with new content chunk
    */
   private updateStreamingMessage(messageId: string, chunk: string, tokens?: number): void {
@@ -1608,7 +1670,21 @@ class NoxChatApp {
    * 🌊 Complete streaming message and convert to regular message
    */
   private completeStreamingMessage(messageId: string, finalMessage: ChatMessage): void {
+    // 🚀 MICRO-BATCHING: Flush any remaining batched chunks before completing
+    const batch = this.chunkBatchBuffer.get(messageId);
+    if (batch) {
+      if (batch.timer) {
+        clearTimeout(batch.timer);
+      }
+      if (batch.chunks.length > 0) {
+        const combinedChunk = batch.chunks.join('');
+        this.updateStreamingMessage(messageId, combinedChunk, batch.tokens);
+      }
+      this.chunkBatchBuffer.delete(messageId);
+    }
+
     // Complete the streaming component
+    // NOTE: completeStreaming() handles optional scroll (respects user scroll position)
     StreamingMessageComponent.completeStreaming(messageId, finalMessage);
 
     // Update session stats
@@ -1618,8 +1694,8 @@ class NoxChatApp {
     this.state.isAIResponding = false;
     this.state.chatHistory.push(finalMessage);
 
-    // Final scroll to show completed message
-    this.scrollToBottom();
+    // ✅ SCROLL FREEDOM: No forced scroll here - completeStreaming() handles it gently
+    // Only scrolls if user was already near bottom (following along)
 
     console.log('🌊 Completed streaming message:', messageId, 'final tokens:', finalMessage.tokens);
   }

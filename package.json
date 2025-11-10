@@ -297,6 +297,52 @@
           "type": "boolean",
           "default": false,
           "description": "🐛 Enable detailed logging for troubleshooting (shows per-chunk streaming logs)"
+        },
+        "nox.streamingEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "💬 Enable character-by-character streaming for AI responses"
+        },
+        "nox.streamingSpeed": {
+          "type": "string",
+          "default": "slow",
+          "enum": [
+            "snail",
+            "tortoise",
+            "slow",
+            "medium",
+            "fast",
+            "instant"
+          ],
+          "enumDescriptions": [
+            "🐌 Snail - Very very slow (maximum readability)",
+            "🐢 Tortoise - Very slow (dyslexia-friendly)",
+            "🚶 Slow - Comfortable reading speed",
+            "🏃 Medium - Default speed",
+            "⚡ Fast - Quick readers",
+            "🚀 Instant - No streaming animation"
+          ],
+          "description": "⚡ Streaming speed for AI responses"
+        },
+        "nox.defaultAIMode": {
+          "type": "string",
+          "default": "assistant",
+          "enum": [
+            "assistant",
+            "agent",
+            "arctic"
+          ],
+          "enumDescriptions": [
+            "👥 Assistant - Collaborative, approval per action",
+            "🤖 Agent - Semi-autonomous, approval per plan",
+            "🦊 Arctic - Full autonomy, minimal approval"
+          ],
+          "description": "🤖 Default AI mode for new chat sessions"
+        },
+        "nox.allowPerChatMode": {
+          "type": "boolean",
+          "default": true,
+          "description": "🔄 Allow selecting different AI modes per chat session"
         }
       }
     }

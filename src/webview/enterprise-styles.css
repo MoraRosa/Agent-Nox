@@ -1207,6 +1207,13 @@ body {
   max-height: none; /* Remove any height restrictions */
 }
 
+/* 🚀 PROGRESSIVE MARKDOWN: Incomplete line styling */
+.streaming-incomplete-line {
+  color: var(--text-primary);
+  opacity: 0.9;
+  display: inline;
+}
+
 /* Streaming Cursor */
 .streaming-cursor {
   color: var(--aurora-blue);
@@ -1316,79 +1323,6 @@ body {
   color: #ef4444;
   font-size: 12px;
   font-weight: 500;
-}
-
-/* ===== STREAMING TOGGLE ===== */
-.streaming-toggle-container {
-  padding: 8px 16px;
-  margin-bottom: 8px;
-  background: rgba(64, 224, 208, 0.05);
-  border: 1px solid rgba(64, 224, 208, 0.2);
-  border-radius: 8px;
-  backdrop-filter: blur(10px);
-}
-
-.streaming-toggle {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  user-select: none;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.streaming-toggle input[type="checkbox"] {
-  display: none;
-}
-
-.toggle-slider {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
-  transition: all 0.3s ease;
-  border: 1px solid rgba(64, 224, 208, 0.3);
-}
-
-.toggle-slider::before {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  background: linear-gradient(135deg, #40e0d0, #00ced1);
-  border-radius: 50%;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.streaming-toggle input:checked + .toggle-slider {
-  background: rgba(64, 224, 208, 0.2);
-  border-color: #40e0d0;
-}
-
-.streaming-toggle input:checked + .toggle-slider::before {
-  transform: translateX(20px);
-  background: linear-gradient(135deg, #00ff7f, #40e0d0);
-  box-shadow: 0 2px 8px rgba(64, 224, 208, 0.4);
-}
-
-.toggle-label {
-  color: #40e0d0;
-  font-weight: 600;
-  text-shadow: 0 0 10px rgba(64, 224, 208, 0.3);
-}
-
-.streaming-toggle:hover .toggle-slider {
-  border-color: #40e0d0;
-  box-shadow: 0 0 10px rgba(64, 224, 208, 0.2);
-}
-
-.streaming-toggle:hover .toggle-label {
-  text-shadow: 0 0 15px rgba(64, 224, 208, 0.5);
 }
 
 /* Responsive Design for Streaming */
@@ -1686,4 +1620,98 @@ body {
 .details-btn:hover {
   background: var(--bg-secondary);
   border-color: var(--aurora-blue);
+}
+
+/* 🎨 Floating Scroll Buttons - Aurora Themed */
+
+/* Top-right navigation buttons (smooth scroll up/down) */
+.scroll-nav-buttons {
+  position: fixed;
+  top: 80px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--aurora-blue);
+  border-radius: 20px;
+  padding: 6px 10px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px var(--aurora-blue-glow);
+  z-index: 1000;
+  opacity: 0.9;
+  transition: all 0.3s ease;
+}
+
+.scroll-nav-buttons:hover {
+  opacity: 1;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4), 0 0 30px var(--aurora-blue-glow);
+  transform: translateY(-2px);
+}
+
+.scroll-nav-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scroll-nav-btn:hover {
+  background: var(--aurora-blue);
+  transform: scale(1.1);
+}
+
+.scroll-nav-divider {
+  color: var(--aurora-blue);
+  opacity: 0.5;
+  font-size: 14px;
+  margin: 0 2px;
+}
+
+/* Bottom-right jump to bottom button */
+.jump-to-bottom-btn {
+  position: fixed;
+  bottom: 100px;
+  right: 16px;
+  width: 48px;
+  height: 48px;
+  background: var(--aurora-blue);
+  border: 2px solid var(--aurora-purple);
+  border-radius: 50%;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 20px var(--aurora-blue-glow);
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(20px);
+  transition: all 0.3s ease;
+}
+
+.jump-to-bottom-btn.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.jump-to-bottom-btn:hover {
+  background: var(--aurora-purple);
+  border-color: var(--aurora-pink);
+  transform: translateY(-4px) scale(1.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4), 0 0 30px var(--aurora-purple-glow);
+}
+
+.jump-to-bottom-btn:active {
+  transform: translateY(-2px) scale(1.05);
 }

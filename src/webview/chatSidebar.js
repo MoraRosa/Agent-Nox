@@ -465,16 +465,20 @@ class NoxChatViewProvider {
 
           // Set up streaming callbacks
           const onChunk = (chunkData) => {
+            // 🌊 INDUSTRY STANDARD: Send chunks immediately (no batching)
+            // Character-by-character buffering happens in webview StreamingBuffer
             this.sendMessageToWebview({
               type: "streamChunk",
               messageId: chunkData.messageId,
               chunk: chunkData.chunk,
-              tokens: chunkData.tokens,
-              isComplete: chunkData.isComplete,
+              tokens: chunkData.tokens || 0,
+              isComplete: false,
             });
           };
 
           const onComplete = async (finalMessage) => {
+            // No buffer to flush - chunks sent immediately
+
             // Add final message to history
             this.chatHistory.push(finalMessage);
             this.saveChatHistory();
@@ -771,16 +775,20 @@ class NoxChatViewProvider {
 
       // Set up streaming handlers
       const onChunk = (data) => {
+        // 🌊 INDUSTRY STANDARD: Send chunks immediately (no batching)
+        // Character-by-character buffering happens in webview StreamingBuffer
         this.sendMessageToWebview({
           type: "streamChunk",
           messageId: messageId,
           chunk: data.chunk,
-          tokens: data.tokens,
-          isComplete: data.isComplete,
+          tokens: data.tokens || 0,
+          isComplete: false,
         });
       };
 
       const onComplete = (finalMessage) => {
+        // No buffer to flush - chunks sent immediately
+
         // Update the message in chat history with the complete content
         stoppedMessage.content = finalMessage.content;
         stoppedMessage.tokens = finalMessage.tokens;
@@ -1614,15 +1622,6 @@ class NoxChatViewProvider {
                         <div class="bundled-indicator">✨ Enterprise Bundle</div>
                     </div>
                 </div>
-            </div>
-
-            <!-- Streaming Toggle -->
-            <div class="streaming-toggle-container">
-                <label class="streaming-toggle">
-                    <input type="checkbox" id="streamingToggle" checked>
-                    <span class="toggle-slider"></span>
-                    <span class="toggle-label">🌊 Real-time Streaming</span>
-                </label>
             </div>
 
             <!-- Input Area -->
